@@ -366,7 +366,7 @@ class UsersAndGroups:
 
     def to_json(self):
         """
-        Adds a group to the container.
+        Returns a JSON string containing users and groups.
         :return: A JSON string representation the users and groups.
         :rtype: str
         """
