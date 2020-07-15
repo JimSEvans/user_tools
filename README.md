@@ -18,7 +18,7 @@ calling the APIs from Python scripts.
 
 User Tools is installed with the same process as other TS Python tools.
 
-You can install using `pip install --upgrade git+https://github.com/thoughtspot/user_tools`
+You can install using `pip install --upgrade git+https://github.com/JimSEvans/user_tools`
 
 See the general [documentation](https://github.com/thoughtspot/community-tools/tree/master/python_tools) on setting 
 up your environment and installing using `pip`.
