@@ -149,6 +149,8 @@ optional arguments:
   --create_groups       Creates user groups if they don't exist and are not specified.
   --merge_groups        Merge user groups with ones they are already in instead of replacing.
 
+~~~
+
 ### transfer_ownership
 
 Transfers the ownership of all objects from one user to another in a ThoughtSpot cluster.
