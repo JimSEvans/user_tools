@@ -17,6 +17,8 @@ import logging
 import requests
 import time
 import tempfile
+import datetime as dt
+import csv
 
 from .model import User, Group, UsersAndGroups
 from .util import eprint
@@ -31,7 +33,7 @@ logger.setLevel(logging.DEBUG)
 
 class UGJsonReader:
     """
-    Reads a user / group structure from JSON and returns a UserGroup object.
+    Reads a user / group structure from JSON and returns a UsersAndGroups object.
     """
 
     def read_from_file(self, filename):
@@ -148,7 +150,7 @@ class BaseApiInterface:
         """
         Log into the ThoughtSpot server.
         """
-        url = self.format_url(SyncUserAndGroups.LOGIN_URL)
+        url = self.format_url(SyncUsersAndGroups.LOGIN_URL)
         response = self.session.post(
             url, data={"username": self.username, "password": self.password}
         )
@@ -183,9 +185,9 @@ class BaseApiInterface:
         return url.format(tsurl=self.tsurl)
 
 
-class SyncUserAndGroups(BaseApiInterface):
+class SyncUsersAndGroups(BaseApiInterface):
     """
-    Synchronized with ThoughtSpot and also gets users and groups from ThoughtSpot.
+    Synchronizes Excel/CSV with ThoughtSpot and also gets users and groups from ThoughtSpot.
     """
 
     LOGIN_URL = "/tspublic/v1/session/login"
@@ -214,7 +216,7 @@ class SyncUserAndGroups(BaseApiInterface):
         :param global_password: If provided, will be passed to the sync call.  This is used to have a single
         password for all users.  This can be significantly faster than individual passwords.
         """
-        super(SyncUserAndGroups, self).__init__(
+        super(SyncUsersAndGroups, self).__init__(
             tsurl=tsurl,
             username=username,
             password=password,
@@ -232,15 +234,18 @@ class SyncUserAndGroups(BaseApiInterface):
         :rtype: UsersAndGroups
         """
 
-        url = self.format_url(SyncUserAndGroups.GET_ALL_URL)
+        url = self.format_url(SyncUsersAndGroups.GET_ALL_URL)
         response = self.session.get(url, cookies=self.cookies)
         if response.status_code == 200:
             logging.info("Successfully got users and groups.")
-            logging.debug(response.text)
+            #logging.debug(response.text)
 
             json_list = json.loads(response.text)
             reader = UGJsonReader()
             auag = reader.parse_json(json_list=json_list)
+            logging.debug("Got {0} users and {1} groups from TS.".format(auag.number_users(), auag.number_groups()))
+
+            
 
             if get_group_privileges:
                 group_priv_api = SetGroupPrivilegesAPI(tsurl=self.tsurl, username=self.username,
@@ -266,7 +271,7 @@ class SyncUserAndGroups(BaseApiInterface):
         :return: A list of user objects.
         :rtype: list of User
         """
-        url = self.format_url(SyncUserAndGroups.USER_METADATA_URL)
+        url = self.format_url(SyncUsersAndGroups.USER_METADATA_URL)
         response = self.session.get(url, cookies=self.cookies)
         users = []
         if response.status_code == 200:
@@ -293,7 +298,7 @@ class SyncUserAndGroups(BaseApiInterface):
                 response.text,
                 )
 
-    def sync_users_and_groups(self, users_and_groups, apply_changes=True,
+    def sync_users_and_groups(self, users_and_groups, apply_changes=False,
                               remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False):
         """
         Syncs users and groups.
@@ -325,7 +330,7 @@ class SyncUserAndGroups(BaseApiInterface):
             self.__add_all_user_groups(existing_ugs, users_and_groups)
 
         if merge_groups:
-            SyncUserAndGroups.__merge_groups_into_new(existing_ugs, users_and_groups)
+            SyncUsersAndGroups.__merge_groups_into_new(existing_ugs, users_and_groups)
 
         # Sync in batches
         if batch_size > 0:
@@ -353,8 +358,9 @@ class SyncUserAndGroups(BaseApiInterface):
     @staticmethod
     def __add_all_user_groups(original_ugs, new_ugs):
         """
-        Causes groups that users are assigned to, but not in the groups, to be added.  This will first get existing
-        groups to make sure existing groups aren't updated.
+        Causes the creation/addition of all groups that users are assigned to, but which don't 
+        already exist as Group objects created from group CSV/Groups Excel sheet. This will first 
+        get existing groups to make sure existing groups aren't updated.
         :param original_ugs: The original users and groups, possibly from ThoughtSpot.
         :type original_ugs: UsersAndGroups
         :param new_ugs: The new users and groups that will be synced.
@@ -394,7 +400,7 @@ class SyncUserAndGroups(BaseApiInterface):
                 new_user.groupNames.extend(original_user.groupNames)
 
     @api_call
-    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False):
+    def _sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False): #apply_changes=True
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -411,11 +417,12 @@ class SyncUserAndGroups(BaseApiInterface):
             # print("Invalid user and group structure.")
             raise Exception("Invalid users and groups")
 
-        url = self.format_url(SyncUserAndGroups.SYNC_ALL_URL)
+        url = self.format_url(SyncUsersAndGroups.SYNC_ALL_URL)
 
-        logging.debug("calling %s" % url)
+        logging.debug("Calling %s" % url)
+        logging.debug("Sending {0} users and {1} groups.".format(users_and_groups.number_users(), users_and_groups.number_groups()))
         json_str = users_and_groups.to_json()
-        logging.info("%s" % json_str)
+        #logging.info("%s" % json_str)
         json.loads(json_str)  # do a load to see if it breaks due to bad JSON.
 
         # Get the temp folder from the environment settings, so it will work cross platform.
@@ -438,13 +445,81 @@ class SyncUserAndGroups(BaseApiInterface):
 
         if response.status_code == 200:
             logging.info("Successfully synced users and groups.")
-            logging.info(response.text.encode("utf-8"))
+            changes_json_bytes = response.text.encode("utf-8")
+            #logging.info(changes_json_bytes)
+            now = dt.datetime.now()
+            now_str = str(now)
+            changes_dict_orig = json.loads(changes_json_bytes) # a dict like {'usersUpdated: ['bob','john'], ...} 
+            numbers_of_updates = {}
+            # log number of changes by type
+            for key in changes_dict_orig.keys():
+                value = len(changes_dict_orig[key])
+                numbers_of_updates[key] = value
+            for key in numbers_of_updates.keys():
+                logging.info("{0}: {1}".format(key, numbers_of_updates[key]))
+            # log JSON response, limited to 1000 chars
+            limited_json = changes_json_bytes[:1000]
+            if limited_json != changes_json_bytes:
+                limited_json += b'... There is more JSON. See autogenerated CSV or JSON log file for more details on the changes made.'
+            logging.info("JSON response from TS:\n{0}".format(limited_json))
+
+            # Restructure changes_dict_orig (from JSON specifying changes made) in order to create a CSV log of all changes
+
+            changes_dicts = [] # will be a list of dicts like [{'entity':'bob', 'entity_type':'user', 'change_type':'Added'},...]
+            entity_type = None # Will have 2 possible values: 'User' or 'Group'
+            change_type = None # WIll have 3 possible values: 'Added', 'Updated', or 'Deleted'
+            keys = list(changes_dict_orig.keys())
+            if set(keys) != set(['usersAdded', 'usersUpdated', 'usersDeleted', 'groupsAdded', 'groupsUpdated',
+            'groupsDeleted']):
+                logging.warn("Logging to CSV will fail: JSON response keys are unexpected: " + str(keys))
+            for key in keys: 
+                if 'users' in key: # e.g. 'usersAdded' -> True
+                    entity_type = 'User'
+                    change_type = key.replace('users', '') # e.g. 'usersAdded' -> 'Added'
+                elif 'groups' in key:
+                    entity_type = 'Group'
+                    change_type = key.replace('groups', '')
+                else:
+                    entity_type = None
+                    change_type = None
+                for entity in changes_dict_orig[key]:
+                    changes_dicts.append({'entity': entity, 'entity_type': entity_type, 'change_type': change_type,
+                    'timestamp': now_str})
+
+            # The log files will contain a timestamp
+            timestamp_for_filename = now.strftime('%d%b%y_%H-%M-%S-%f')
+            # If the --apply_changes flag was absent, this is all in "test mode" and changes are not really being made.
+            # This will be capured in the names of the log files.
+            if not apply_changes:
+                timestamp_for_filename += '_Test_Mode'
+
+            if changes_dicts != []: # if there were any changes log them as a CSV
+                csv_log_file_name = 'changes_' + timestamp_for_filename + '.csv'
+                with open(csv_log_file_name, 'w') as changes_file:
+                    writer = csv.DictWriter(changes_file, fieldnames=changes_dicts[0].keys())
+                    writer.writeheader()
+                    for change in changes_dicts:
+                        writer.writerow(change)
+                logging.info("Changes occurred: CSV log saved to ./{0}".format(csv_log_file_name))
+            else: # if no changes, still create a ".csv" documenting that no changes were made
+                csv_log_file_name = 'changes_' + timestamp_for_filename + '_NO_CHANGE.csv'
+                with open(csv_log_file_name, 'w') as changes_file:
+                    pass
+                    #changes_file.write("No changes occurred when Python updated TS at %s" % now_str)
+                logging.info("No changes: An empty file was created at ./{0}".format(csv_log_file_name))
+
+            # save log as raw JSON (in case, for instance, something goes wrong with the CSV log)
+            json_log_file_name = 'changes_' + timestamp_for_filename + '.json'
+            with open(json_log_file_name, 'w') as changes_file_json:
+                writer = changes_file_json.write(str(changes_json_bytes))
+            logging.info("Log of JSON response saved to ./{0}".format(json_log_file_name))
+            
             return response
 
         else:
-            logging.error("Failed synced users and groups.")
+            logging.error("Failed to sync users and groups.")
             logging.info(response.text.encode("utf-8"))
-            with open("ts_users_and_groups.json", "w") as outfile:
+            with open("ts_users_and_groups_for_last_failed_sync.json", "w") as outfile:
                 outfile.write(str(json_str.encode("utf-8")))
             raise requests.ConnectionError(
                 "Error syncing users and groups (%d)" % response.status_code,
@@ -461,7 +536,7 @@ class SyncUserAndGroups(BaseApiInterface):
 
         # for each username, get the guid and put in a list.  Log errors for users not found, but don't stop.
         logging.info("Deleting users %s." % usernames)
-        url = self.format_url(SyncUserAndGroups.USER_METADATA_URL)
+        url = self.format_url(SyncUsersAndGroups.USER_METADATA_URL)
         response = self.session.get(url, cookies=self.cookies)
         users = {}
         if response.status_code == 200:
@@ -486,7 +561,7 @@ class SyncUserAndGroups(BaseApiInterface):
                 return
 
             logging.info("Deleting user IDs %s." % user_list)
-            url = self.format_url(SyncUserAndGroups.DELETE_USERS_URL)
+            url = self.format_url(SyncUsersAndGroups.DELETE_USERS_URL)
             params = {"ids": json.dumps(user_list)}
             response = self.session.post(
                 url, data=params, cookies=self.cookies
@@ -524,7 +599,7 @@ class SyncUserAndGroups(BaseApiInterface):
         """
 
         # for each groupname, get the guid and put in a list.  Log errors for groups not found, but don't stop.
-        url = self.format_url(SyncUserAndGroups.GROUP_METADATA_URL)
+        url = self.format_url(SyncUsersAndGroups.GROUP_METADATA_URL)
         response = self.session.get(url, cookies=self.cookies)
         groups = {}
         if response.status_code == 200:
@@ -551,7 +626,7 @@ class SyncUserAndGroups(BaseApiInterface):
                 eprint("No valid groups to delete.")
                 return
 
-            url = self.format_url(SyncUserAndGroups.DELETE_GROUPS_URL)
+            url = self.format_url(SyncUsersAndGroups.DELETE_GROUPS_URL)
             params = {"ids": json.dumps(group_list)}
             response = self.session.post(
                 url, data=params, cookies=self.cookies
@@ -592,7 +667,7 @@ class SyncUserAndGroups(BaseApiInterface):
         :type password: str
         """
 
-        url = self.format_url(SyncUserAndGroups.UPDATE_PASSWORD_URL)
+        url = self.format_url(SyncUsersAndGroups.UPDATE_PASSWORD_URL)
         params = {
             "name": userid,
             "currentpassword": currentpassword,

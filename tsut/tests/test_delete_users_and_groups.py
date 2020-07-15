@@ -1,6 +1,6 @@
 import unittest
 
-from tsut.api import SyncUserAndGroups
+from tsut.api import SyncUsersAndGroups
 from tsut.model import UsersAndGroups, Group, User, Visibility
 
 """
@@ -95,7 +95,7 @@ class TestDeleteUsersAndGroups(unittest.TestCase):
 
         print(auag)
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -108,7 +108,7 @@ class TestDeleteUsersAndGroups(unittest.TestCase):
 
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -125,7 +125,7 @@ class TestDeleteUsersAndGroups(unittest.TestCase):
 
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -142,7 +142,7 @@ class TestDeleteUsersAndGroups(unittest.TestCase):
 
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -159,7 +159,7 @@ class TestDeleteUsersAndGroups(unittest.TestCase):
 
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,

@@ -3,6 +3,7 @@ import copy
 import json
 from openpyxl import Workbook
 import xlrd  # reading Excel
+import csv
 
 from .api import UsersAndGroups, User, Group, eprint
 
@@ -229,9 +230,7 @@ class UGXLSReader:
             display_name = row[indices["Display Name"]]
             email = row[indices["Email"]]
             groups = []
-            if row[indices["Groups"]] and row[
-                indices["Groups"]
-            ]:
+            if row[indices["Groups"]]:
                 groups = ast.literal_eval(
                     row[indices["Groups"]]
                 )  # assumes a valid list format, e.g. ["a", "b", ...]
@@ -294,23 +293,24 @@ class UGXLSReader:
 
 class UGCSVReader:
     """
-    Reads users and groups from CSV.  All users and groups are in a single file.
+    Reads users and groups from CSV. All users come from the user_csv file and
+    groups are from the group_csv file.
     """
-    DEFAULT_GROUP_FIELD_MAPPING = {
-        "name": "Group Name",
-        "display_name": "Group Display Name",
-        "description": "Group Description",
-        "group_names": "Group Names",
-        "visibility": "Group Visibility",
-        "privileges": "Group Privileges"
-    }
     DEFAULT_USER_FIELD_MAPPING = {
-        "name": "User Name",
-        "display_name": "User Display Name",
-        "password": "User Password",
-        "description": "User Description",
-        "group_names": "User Group Names",
-        "visibility": "User Visibility"
+        "name": "Name",
+        "display_name": "Display Name",
+        "mail": "Email",
+        "password": "Password",
+        "group_names": "Groups",
+        "visibility": "Visibility"
+    }
+    DEFAULT_GROUP_FIELD_MAPPING = {
+        "name": "Name",
+        "display_name": "Display Name",
+        "description": "Description",
+        "group_names": "Groups",
+        "visibility": "Visibility",
+        "privileges": "Privileges"
     }
 
     def __init__(self,
@@ -319,7 +319,7 @@ class UGCSVReader:
                  delimiter=","):
         """
         Creates a new CSV reader that can read based on the field mapping and delimiter.  While this class can
-        cause groups to be created, the primary use is to have groups that will be
+        cause groups to be created, the primary use is to have groups that will be.......??????????????????
         :param user_field_mapping: The mapping of columns to values for users.
         :type user_field_mapping: dict of str:str
         :param group_field_mapping: The mapping of columns to values for groups.
@@ -339,9 +339,9 @@ class UGCSVReader:
         :raises: ValueError
         """
         if "name" not in self.user_field_mapping.keys():
-            raise ValueError("Missing name parameter for users.")
+            raise ValueError("Missing mapping for 'name' for use with user CSV.")
         if "name" not in self.group_field_mapping.keys():
-            raise ValueError("Missing name parameter for groups.")
+            raise ValueError("Missing mapping for 'name' for use with groups CSV.")
 
     def read_from_file(self, user_file, group_file=None):
         """
@@ -354,6 +354,81 @@ class UGCSVReader:
         :return: Users and groups object.
         :rtype: UsersAndGroups
         """
-        pass
+        # initialize UsersAndGroups object to add User and Group objects to
+        uag = UsersAndGroups()
 
+        # Do minimal check on user CSV file, read, create User.
+
+        # Saving the column name that "name" maps to since I use it again later
+        user_name_column_name = self.user_field_mapping["name"]
+
+        column_names = None
+
+        with open(user_file, 'r') as uf:
+            csv_reader = csv.reader(uf)
+            csv_dict_reader = csv.DictReader(uf)
+            firstline = 1
+            for line in csv_dict_reader:
+                #for the first line, check column names
+                if firstline:
+                    column_names = line.keys()
+                    if user_name_column_name not in column_names:
+                        raise ValueError("No column called '%s' in CSV" % user_name_column_name)
+                # create User object
+
+                #handle blanks in group_names column
+                groups_field_raw = line[self.user_field_mapping["group_names"]]
+                groups_field = "[]" if groups_field_raw == "" else groups_field_raw
+
+                u = User(
+                    name = line[user_name_column_name],
+                    display_name = line[self.user_field_mapping["display_name"]],
+                    mail = line[self.user_field_mapping["mail"]],
+                    password = line[self.user_field_mapping["password"]],
+                    group_names = ast.literal_eval(groups_field),# assumes valid list format, e.g. ["a", "b", ...]
+                    visibility = line[self.user_field_mapping["visibility"]]
+                    )
+                #add User to UsersAndGroups object
+                uag.add_user(u)
+                firstline = 0
+
+
+        # If there, do minimal check on group CSV file, read, create Group.
+
+        # Saving the column name that "name" maps to since I use it again later
+        group_name_column_name = self.group_field_mapping["name"]
+        g_column_names = None
+
+        if group_file is not None:
+            with open(group_file, 'r') as gf:
+                g_csv_reader = csv.reader(gf)
+                firstline = 1
+                g_csv_dict_reader = csv.DictReader(gf)
+                for line in g_csv_dict_reader:
+                    #for the first line, check column names
+                    if firstline:
+                        g_column_names = line.keys()
+                        if group_name_column_name not in g_column_names:
+                            raise ValueError("No column called '%s' in CSV" % group_name_column_name)
+                        
+                    if group_name_column_name not in g_column_names:
+                        raise ValueError("No column called '%s' in CSV" % group_name_column_name)
+                    # create Group object
+
+                    #handle blanks in group_names column
+                    g_groups_field_raw = line[self.group_field_mapping["group_names"]]
+                    g_groups_field = "[]" if g_groups_field_raw == "" else g_groups_field_raw
+
+                    g = Group(
+                        name = line[group_name_column_name],
+                        display_name = line[self.group_field_mapping["display_name"]],
+                        description = line[self.group_field_mapping["description"]],
+                        privileges = line[self.group_field_mapping["privileges"]],
+                        group_names = ast.literal_eval(line[self.group_field_mapping["group_names"]]),# assumes valid list format, e.g. ["a", "b", ...]
+                        visibility = line[self.group_field_mapping["visibility"]]
+                        )
+                    #add User to UsersAndGroups object
+                    uag.add_group(g)
+                    firstline = 0
+        return uag
 

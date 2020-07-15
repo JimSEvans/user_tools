@@ -1,6 +1,6 @@
 import unittest
 
-from tsut.api import SyncUserAndGroups, Privileges, SetGroupPrivilegesAPI
+from tsut.api import SyncUsersAndGroups, Privileges, SetGroupPrivilegesAPI
 from tsut.model import UsersAndGroups, User, Group, Visibility
 
 TS_URL = "https://tstest"  # Test ThoughtSpot instance.
@@ -82,7 +82,7 @@ class TestPrivs(unittest.TestCase):
 
         print(auag)
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,

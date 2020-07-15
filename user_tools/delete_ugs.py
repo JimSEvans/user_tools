@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import argparse
-from tsut.api import SyncUserAndGroups, eprint
+from tsut.api import SyncUsersAndGroups, eprint
 from tsut.apps import add_cnx_parser_arguments
 
 """
@@ -35,7 +35,7 @@ def run_app():
         if args.ts_url and args.ts_url.endswith ("/"):
             args.ts_url = args.ts_url[:-1]
 
-        sync = SyncUserAndGroups(tsurl=args.ts_url,
+        sync = SyncUsersAndGroups(tsurl=args.ts_url,
                                  username=args.username, password=args.password,
                                  disable_ssl=args.disable_ssl)
 
@@ -92,7 +92,7 @@ def delete_users(args, sync):
     :param args: The command line arguments.  Includes the list of users.
     :type args: argparse.Namespace
     :param sync: A sync to use for deleting users.
-    :type sync: SyncUserAndGroups
+    :type sync: SyncUsersAndGroups
     """
     users = [x.strip() for x in args.users.split(",")]
     sync.delete_users(usernames=users)
@@ -104,7 +104,7 @@ def delete_users_from_file(args, sync):
     :param args: Command line arguments.
     :type args: argparse.Namespace
     :param sync: A sync to use for deleting users.
-    :type sync: SyncUserAndGroups
+    :type sync: SyncUsersAndGroups
     """
     users = []
     with open(args.user_file, "r") as user_file:
@@ -123,7 +123,7 @@ def delete_groups(args, sync):
     :param args: The command line arguments.  Includes the list of users.
     :type args: argparse.Namespace
     :param sync: A sync to use for deleting users.
-    :type sync: SyncUserAndGroups
+    :type sync: SyncUsersAndGroups
     """
     groups = [x.strip() for x in args.groups.split(",")]
     sync.delete_groups(groupnames=groups)
@@ -135,7 +135,7 @@ def delete_groups_from_file(args, sync):
     :param args: Command line arguments.
     :type args: argparse.Namespace
     :param sync: A sync to use for deleting groups.
-    :type sync: SyncUserAndGroups
+    :type sync: SyncUsersAndGroups
     """
     groups = []
     with open(args.group_file, "r") as group_file:

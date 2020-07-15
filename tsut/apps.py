@@ -1,12 +1,12 @@
 import argparse
 from abc import abstractmethod
 import copy
-import logging
-import os
+#import logging
+#import os
 
-from tsut.api import SyncUserAndGroups
-from tsut.model import UsersAndGroups
-from tsut.io import UGXLSWriter, UGXLSReader
+from tsut.api import SyncUsersAndGroups
+#from tsut.model import UsersAndGroups
+from tsut.io import UGXLSWriter, UGXLSReader, UGCSVReader
 
 """
 Converts from non-TS DDL to TS DDL.  $ convert_ddl.py --help for more details.
@@ -169,7 +169,7 @@ class TSUGSyncReader(TSUGReader):
         :return: Users and groups that were read.
         :rtype: UsersAndGroups
         """
-        sync = SyncUserAndGroups(tsurl=args.ts_url, username=args.username,
+        sync = SyncUsersAndGroups(tsurl=args.ts_url, username=args.username,
                                  password=args.password, disable_ssl=args.disable_ssl)
         ugs = sync.get_all_users_and_groups(get_group_privileges=args.group_privileges)
         #print(ugs.to_json())
@@ -209,6 +209,40 @@ class TSUGXLSXReader(TSUGReader):
         ugs = reader.read_from_excel(filepath=args.filename)
         return ugs
 
+
+class TSUGCSVReader(TSUGReader):
+    """
+    Reads users and groups from CSV using the sync API.
+    """
+
+    def __init__(self):
+        """
+        Creates a new TSUGCSVReader to read users and groups from CSV.
+        """
+        super(TSUGCSVReader, self).__init__(
+            required_arguments=["user_csv"]
+        )
+
+    def add_parser_arguments(self, parser):
+        """
+        :param parser: The parser to add arguments to.
+        :type parser: argparse.ArgumentParser
+        """
+        add_cnx_parser_arguments(parser)
+        parser.add_argument("--user_csv", help="Name of CSV file to read users from.")
+        parser.add_argument("--group_csv", help="Name of CSV file to read groups from.")
+
+    def get_users_and_groups(self, args):
+        """
+        Called by the app to get users and groups.  This method is usually overwritten.
+        :param args: Passed in arguments.
+        :type args: argparse.Namespace
+        :return: Users and groups that were read.
+        :rtype: UsersAndGroups
+        """
+        reader = UGCSVReader()
+        ugs = reader.read_from_file(user_file=args.user_csv, group_file=args.group_csv)
+        return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------
 
@@ -454,7 +488,7 @@ class TSUGSyncWriter(TSUGWriter):
         :type ugs: UsersAndGroups
         :return:  None
         """
-        sync = SyncUserAndGroups(tsurl=args.ts_url, username=args.username,
+        sync = SyncUsersAndGroups(tsurl=args.ts_url, username=args.username,
                                  password=args.password,
                                  disable_ssl=args.disable_ssl)
         sync.sync_users_and_groups(users_and_groups=ugs,
@@ -531,8 +565,8 @@ class TSUserGroupSyncApp:
         fail = False
         has_valid_args = self._ug_reader.has_valid_arguments(args=self._args)
         if not has_valid_args[0]:
-            fail = True
-            print(TSUserGroupSyncApp._get_error_msg(has_valid_args[1]))
+           fail = True
+           print(TSUserGroupSyncApp._get_error_msg(has_valid_args[1]))
 
         for w in self._ug_writers:
             has_valid_args = w.has_valid_arguments(args=self._args)

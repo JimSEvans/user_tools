@@ -1,6 +1,6 @@
 import unittest
 
-from tsut.api import SyncUserAndGroups, Privileges, SetGroupPrivilegesAPI
+from tsut.api import SyncUsersAndGroups, Privileges, SetGroupPrivilegesAPI
 from tsut.model import UsersAndGroups, User, Group, Visibility
 
 """
@@ -99,7 +99,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
 
         print(auag)
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -113,7 +113,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
         """
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -192,7 +192,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
             )
         )
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -315,7 +315,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
         Tests updating groups that are non-shareable.
         """
         self.create_common_users_and_groups()
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -357,7 +357,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
 
         self.create_common_users_and_groups()
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
@@ -375,7 +375,7 @@ class TestSyncUsersAndGroups(unittest.TestCase):
         Tests updating a user password.
         """
 
-        sync = SyncUserAndGroups(
+        sync = SyncUsersAndGroups(
             tsurl=TS_URL,
             username=TS_USER,
             password=TS_PASSWORD,
