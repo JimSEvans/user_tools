@@ -1,8 +1,8 @@
 import ast
 import copy
 import json
-from openpyxl import Workbook
-import xlrd  # reading Excel
+#from openpyxl import Workbook
+#import xlrd  # reading Excel
 import csv
 
 from .api import UsersAndGroups, User, Group, eprint
