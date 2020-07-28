@@ -19,6 +19,8 @@ import time
 import tempfile
 import datetime as dt
 import csv
+import os
+import shutil
 
 from .model import User, Group, UsersAndGroups
 from .util import eprint
@@ -299,7 +301,8 @@ class SyncUsersAndGroups(BaseApiInterface):
                 )
 
     def sync_users_and_groups(self, users_and_groups, apply_changes=False,
-                              remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False):
+                              remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, 
+                              log_dir='logs/', archive_dir='archive/', sync_files=[]):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -316,6 +319,10 @@ class SyncUsersAndGroups(BaseApiInterface):
         :type create_groups: bool
         :param merge_groups: Flag to indicate if groups should be merged.  True means add to old groups.
         :type merge_groups: bool
+        :param log_dir: Directory to save log files to
+        :type log_dir: str
+        :param archive_dir: Directory to save log files to
+        :type archive_dir: str
         """
 
         if not apply_changes:
@@ -348,12 +355,17 @@ class SyncUsersAndGroups(BaseApiInterface):
                                            duplicate=UsersAndGroups.IGNORE_ON_DUPLICATE)
 
                 self._sync_users_and_groups(users_and_groups=ug_batch,
-                                            apply_changes=apply_changes, remove_deleted=remove_deleted)
+                                            apply_changes=apply_changes, remove_deleted=remove_deleted,
+                                            log_dir=log_dir, archive_dir=archive_dir, sync_files=sync_files)
 
         # Sync all users and groups.
         else:
             self._sync_users_and_groups(users_and_groups=users_and_groups,
-                                        apply_changes=apply_changes, remove_deleted=remove_deleted)
+                apply_changes=apply_changes,
+                remove_deleted=remove_deleted,
+                log_dir=log_dir,
+                archive_dir=archive_dir,
+                sync_files=sync_files)
 
     @staticmethod
     def __add_all_user_groups(original_ugs, new_ugs):
@@ -400,7 +412,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 new_user.groupNames.extend(original_user.groupNames)
 
     @api_call
-    def _sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False): #apply_changes=True
+    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', sync_files=[]):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -442,13 +454,41 @@ class SyncUsersAndGroups(BaseApiInterface):
             params["password"] = self.global_password
 
         response = self.session.post(url, files=params, cookies=self.cookies)
+        
+        # A bunch of stuff for logging the result of the request immediately above
+
+        now = dt.datetime.now()
+        now_str = str(now)
+
+        # If an existing non-dir file is named log_dir, change log_dir to the working directory.
+        # Otherwise, use log_dir, creating it if it doesn't exist
+        try:
+            os.makedirs(log_dir)
+        except FileExistsError:
+            if os.path.isfile(log_dir):
+                logging.warn("There is already a file called '{0}'. Logs will instead be saved to '.' (the current working directory).").format(log_dir)
+                log_dir = '.'
+            else: # There is already a dir with that name, that's great (i.e. do nothing, thereby we use that dir)
+                pass
+                
+
+
+        # Ensure that the dir path ends with exactly one '/'
+        if not log_dir.endswith('/'):
+            log_dir += '/'
+
+        # The log files will contain a timestamp
+        timestamp_for_filename = now.strftime('%d%b%y_%H-%M-%S-%f')
+
+        # If the --apply_changes flag was absent, this is all in "test mode" and changes are not really being made.
+        # This will be capured in the names of the log files.
+        if not apply_changes:
+            timestamp_for_filename += '_Test_Mode'
 
         if response.status_code == 200:
             logging.info("Successfully synced users and groups.")
             changes_json_bytes = response.text.encode("utf-8")
             #logging.info(changes_json_bytes)
-            now = dt.datetime.now()
-            now_str = str(now)
             changes_dict_orig = json.loads(changes_json_bytes) # a dict like {'usersUpdated: ['bob','john'], ...} 
             numbers_of_updates = {}
             # log number of changes by type
@@ -471,7 +511,7 @@ class SyncUsersAndGroups(BaseApiInterface):
             keys = list(changes_dict_orig.keys())
             if set(keys) != set(['usersAdded', 'usersUpdated', 'usersDeleted', 'groupsAdded', 'groupsUpdated',
             'groupsDeleted']):
-                logging.warn("Logging to CSV will fail: JSON response keys are unexpected: " + str(keys))
+                logging.warn("Logging to CSV will fail: JSON response keys are unexpected: {0}".format(keys))
             for key in keys: 
                 if 'users' in key: # e.g. 'usersAdded' -> True
                     entity_type = 'User'
@@ -486,33 +526,75 @@ class SyncUsersAndGroups(BaseApiInterface):
                     changes_dicts.append({'entity': entity, 'entity_type': entity_type, 'change_type': change_type,
                     'timestamp': now_str})
 
-            # The log files will contain a timestamp
-            timestamp_for_filename = now.strftime('%d%b%y_%H-%M-%S-%f')
-            # If the --apply_changes flag was absent, this is all in "test mode" and changes are not really being made.
-            # This will be capured in the names of the log files.
-            if not apply_changes:
-                timestamp_for_filename += '_Test_Mode'
 
-            if changes_dicts != []: # if there were any changes log them as a CSV
-                csv_log_file_name = 'changes_' + timestamp_for_filename + '.csv'
-                with open(csv_log_file_name, 'w') as changes_file:
-                    writer = csv.DictWriter(changes_file, fieldnames=changes_dicts[0].keys())
+        # If an existing non-dir file is named archive_dir, change archive_dir to the working directory.
+        # Otherwise, use archive_dir, creating it if it doesn't exist
+            try:
+                os.makedirs(archive_dir)
+            except FileExistsError:
+                if os.path.isfile(archive_dir):
+                    logging.warn("There is already a non-dir file called '{0}'. Logs will instead be saved to '.' (the current working directory).").format(archive_dir)
+                    archive_dir = './'
+
+            # Ensure that the dir paths end in a single '/'
+            if not archive_dir.endswith('/'):
+                archive_dir += '/'
+
+            #for dir_str in [log_dir, archive_dir]:
+            #    if not dir_str.endswith('/'):
+            #        dir_str += '/'
+
+
+            log_file_name_no_ext = log_dir + 'changes_' + timestamp_for_filename
+
+            changes_occurred = len(changes_dicts) > 0 
+
+            extra_file_name_component = '_NO_CHANGE' if not changes_occurred else ''
+
+            log_file_name_no_ext += extra_file_name_component # adds '_NO_CHANGE' to the file name if there were no changes'
+
+            # Make a CSV log of changes
+
+            # TODO Add column specifying the change that wasy made so that people don't have to cross reference log file with archive
+            # TODO Add the name of the original CSV to the name of the log file so the connection is explicit
+
+
+
+            csv_log_file_name = log_file_name_no_ext + '.csv'
+
+            with open(csv_log_file_name, 'w') as changes_file_csv:
+                if changes_occurred:
+                    writer = csv.DictWriter(changes_file_csv, fieldnames=changes_dicts[0].keys())
                     writer.writeheader()
                     for change in changes_dicts:
                         writer.writerow(change)
-                logging.info("Changes occurred: CSV log saved to ./{0}".format(csv_log_file_name))
-            else: # if no changes, still create a ".csv" documenting that no changes were made
-                csv_log_file_name = 'changes_' + timestamp_for_filename + '_NO_CHANGE.csv'
-                with open(csv_log_file_name, 'w') as changes_file:
-                    pass
+                    logging.info("Changes occurred: CSV log saved to {0}".format(csv_log_file_name))
+                else:
+                    logging.info("No changes: A file showing no changes was created at {0}".format(csv_log_file_name))
                     #changes_file.write("No changes occurred when Python updated TS at %s" % now_str)
-                logging.info("No changes: An empty file was created at ./{0}".format(csv_log_file_name))
 
-            # save log as raw JSON (in case, for instance, something goes wrong with the CSV log)
-            json_log_file_name = 'changes_' + timestamp_for_filename + '.json'
+            # Log original JSON (in case, for instance, something goes wrong with the CSV log)
+
+            json_log_file_name = log_file_name_no_ext + '.json'
+            
             with open(json_log_file_name, 'w') as changes_file_json:
                 writer = changes_file_json.write(str(changes_json_bytes))
             logging.info("Log of JSON response saved to ./{0}".format(json_log_file_name))
+
+            #TODO move synced CSV to archive folder
+
+            if True:#apply_changes:
+                logging.info("sync_files: {0}".format(str(sync_files)))
+                for f in sync_files:
+                    shutil.copy2(f, archive_dir + f.split("/")[-1]) # tries to preserve metadata during move
+                #shutil.move(sync_file, archive_dir + sync_file)
+
+
+            # TODO log the sent data as CSV/JSON to log_dir but only if it doesn't match the sync files (user_csv/group_csv)
+            
+            #with open(archive_dir + 'archive_' + timestamp_for_filename + '.json') as archive_file_json:
+            #    archive_file_json.write(str(json_str.encode("utf-8")))
+            #    logging.info("Archive of JSON representing the UsersAndGroups object sent to TS was saved to ./{0}".format(json_log_file_name))
             
             return response
 

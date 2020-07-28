@@ -89,7 +89,7 @@ class CSVWriter(TSUGWriter):
         """
         parser.add_argument("--output_filename", help="Name of the file to write to.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups to a delimited.
         :param args: Command line arguments for writing.  Expects the "filename" argument.

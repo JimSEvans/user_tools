@@ -1,7 +1,7 @@
 import argparse
 from abc import abstractmethod
 import copy
-#import logging
+import logging
 #import os
 
 from tsut.api import SyncUsersAndGroups
@@ -260,7 +260,7 @@ class TSUGWriter(ArgumentUser):
         super(TSUGWriter, self).__init__(required_arguments=required_arguments)
 
     @abstractmethod
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.
@@ -290,7 +290,7 @@ class TSUGXLSWriter(TSUGWriter):
         """
         parser.add_argument("--filename", help="Name of the file to write to.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.  Expects the "filename" argument.
@@ -321,7 +321,7 @@ class TSUGJsonWriter(TSUGWriter):
         """
         parser.add_argument("--filename", help="Name of the file to write to.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.  Expects the "filename" argument.
@@ -352,7 +352,7 @@ class TSUGStdOutWriter(TSUGWriter):
         """
         pass
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.  None expected or used.
@@ -384,7 +384,7 @@ class TSUGCSVWriter(TSUGWriter):
         """
         parser.add_argument("--filename", help="Name of the file to write to.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups to a csv file.
         :param args: Command line arguments for writing.  None expected or used.
@@ -420,7 +420,7 @@ class TSUGOutputWriter(TSUGWriter):
         parser.add_argument("--filename",
                             help="Name of file to write to if not stdout.  Required for CSV, Excel and JSON.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.  None expected or used.
@@ -439,12 +439,12 @@ class TSUGOutputWriter(TSUGWriter):
         if args.output_type == "csv":
             writer = TSUGCSVWriter()
         elif args.output_type == "json":
-            writer = TSUGJsonWriter()
+            writer = TSUGJsonWri=Noneter()
         elif args.output_type == "excel" or args.output_type == "xls":
             writer = TSUGXLSWriter()
 
         if writer:
-            writer.write_user_and_groups(args=args, ugs=ugs)
+            writer.write_users_and_groups(args=args, ugs=ugs)
         else:
             raise Exception("No valid output type specified.  See --help.")
 
@@ -468,7 +468,7 @@ class TSUGSyncWriter(TSUGWriter):
         add_cnx_parser_arguments(parser)
         parser.add_argument("--remove_deleted", action="store_true",
                             help="Will remove users not in the synced list.  Cannot be used with batch_size.",
-                            default=False)
+                            default=False) # TODO It may not be intuitive, but action="store_true" makes the default False when the command-line argument is omitted. Confirm that this is truly redundant, and if so, delete default=False from these entries.
         parser.add_argument("--apply_changes", action="store_true",
                             help="Will apply changes when syncing users and groups.  Default is False for testing.",
                             default=False)
@@ -478,8 +478,12 @@ class TSUGSyncWriter(TSUGWriter):
                             help="Creates user groups if they don't exist and are not specified.")
         parser.add_argument("--merge_groups", default=False, action="store_true",
                             help="Merge user groups with ones they are already in instead of replacing.")
+        parser.add_argument("--log_dir", default='./logs',
+                            help="Identifies the location to save logs of changes made.")
+        parser.add_argument("--archive_dir", default='./archive',
+                            help="Identifies the location to archive the successfully synced files.")
 
-    def write_user_and_groups(self, args, ugs):
+    def write_users_and_groups(self, args, ugs):
         """
         Writes the users and groups.
         :param args: Command line arguments for writing.
@@ -488,6 +492,16 @@ class TSUGSyncWriter(TSUGWriter):
         :type ugs: UsersAndGroups
         :return:  None
         """
+        ts_sync_files = []
+        if args.user_csv:
+            ts_sync_files.append(args.user_csv)
+            if args.group_csv:
+                ts_sync_files.append(group_csv)
+        else:
+            ts_sync_files.append(args.filename)
+
+        logging.info("apply_changes: {0}".format(args.apply_changes))
+        logging.info("remove_deleted: {0}".format(args.remove_deleted))
         sync = SyncUsersAndGroups(tsurl=args.ts_url, username=args.username,
                                  password=args.password,
                                  disable_ssl=args.disable_ssl)
@@ -496,7 +510,10 @@ class TSUGSyncWriter(TSUGWriter):
                                    remove_deleted=args.remove_deleted,
                                    batch_size=args.batch_size,
                                    merge_groups=args.merge_groups,
-                                   create_groups=args.create_groups)
+                                   create_groups=args.create_groups,
+                                   log_dir=args.log_dir,
+                                   archive_dir=args.archive_dir,
+                                   sync_files=ts_sync_files)
 
 
 class TSUserGroupSyncApp:
@@ -579,6 +596,6 @@ class TSUserGroupSyncApp:
 
         ugs = self._ug_reader.get_users_and_groups(args=self._args)
         for w in self._ug_writers:
-            w.write_user_and_groups(ugs=ugs, args=self._args)
+            w.write_users_and_groups(ugs=ugs, args=self._args)
 
         print("Success")

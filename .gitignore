@@ -1,6 +1,7 @@
 foo*
 .idea*
 logs/
+archive/
 ts_users_and_groups_for_last_failed_sync.json
 .DS_Store
 
