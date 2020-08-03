@@ -6,7 +6,7 @@ import logging
 
 from tsut.api import SyncUsersAndGroups
 #from tsut.model import UsersAndGroups
-from tsut.io import UGXLSWriter, UGXLSReader, UGCSVReader
+from tsut.io import UGXLSWriter, UGXLSReader, UGCSVReader, UGOracleReader
 
 """
 Converts from non-TS DDL to TS DDL.  $ convert_ddl.py --help for more details.
@@ -195,7 +195,7 @@ class TSUGXLSXReader(TSUGReader):
         :type parser: argparse.ArgumentParser
         """
         add_cnx_parser_arguments(parser)
-        parser.add_argument("--filename", help="Name of file to read from.")
+        parser.add_argument("--filename", help="Path to Excel file to read users and groups from.")
 
     def get_users_and_groups(self, args):
         """
@@ -219,6 +219,7 @@ class TSUGCSVReader(TSUGReader):
         """
         Creates a new TSUGCSVReader to read users and groups from CSV.
         """
+
         super(TSUGCSVReader, self).__init__(
             required_arguments=["user_csv"]
         )
@@ -229,8 +230,8 @@ class TSUGCSVReader(TSUGReader):
         :type parser: argparse.ArgumentParser
         """
         add_cnx_parser_arguments(parser)
-        parser.add_argument("--user_csv", help="Name of CSV file to read users from.")
-        parser.add_argument("--group_csv", help="Name of CSV file to read groups from.")
+        parser.add_argument("--user_csv", help="Path to CSV file to read users from.")
+        parser.add_argument("--group_csv", help="Path to CSV file to read groups from.")
 
     def get_users_and_groups(self, args):
         """
@@ -242,6 +243,42 @@ class TSUGCSVReader(TSUGReader):
         """
         reader = UGCSVReader()
         ugs = reader.read_from_file(user_file=args.user_csv, group_file=args.group_csv)
+        return ugs
+
+class TSUGOracleReader(TSUGReader):
+    """
+    Reads users and groups from Oracle DB.
+    """
+
+    def __init__(self):
+        """
+        Creates a new TSUGOracleReader to read users and groups from Oracle DB.
+        """
+
+        super(TSUGOracleReader, self).__init__(
+            required_arguments=["oracle_config_json", "user_sql"]
+        )
+
+    def add_parser_arguments(self, parser):
+        """
+        :param parser: The parser to add arguments to.
+        :type parser: argparse.ArgumentParser
+        """
+        add_cnx_parser_arguments(parser)
+        parser.add_argument("--oracle_config_json", help="Path to SQL file to read query string from, to get users.")
+        parser.add_argument("--user_sql", help="Path to SQL file to read query string from, to get users.")
+        parser.add_argument("--group_sql", help="Path to SQL file to read query string from, to get groups.")
+
+    def get_users_and_groups(self, args):
+        """
+        Called by the app to get users and groups.  This method is usually overwritten.
+        :param args: Passed in arguments.
+        :type args: argparse.Namespace
+        :return: Users and groups that were read.
+        :rtype: UsersAndGroups
+        """
+        reader = UGOracleReader()
+        ugs = reader.read_from_oracle(oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql)
         return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------
@@ -482,6 +519,11 @@ class TSUGSyncWriter(TSUGWriter):
                             help="Identifies the location to save logs of changes made.")
         parser.add_argument("--archive_dir", default='./archive',
                             help="Identifies the location to archive the successfully synced files.")
+        parser.add_argument("--user_csv", help="Path to CSV file to read users from.")
+        parser.add_argument("--group_csv", help="Path to CSV file to read groups from.")
+        parser.add_argument("--user_sql", help="Path to CSV file to read users from.") #TODO help msg bad
+        parser.add_argument("--group_sql", help="Path to CSV file to read groups from.")
+        parser.add_argument("--filename", help="Path to Excel file to read users and groups from.") #TODO help msg bad
 
     def write_users_and_groups(self, args, ugs):
         """
@@ -497,11 +539,15 @@ class TSUGSyncWriter(TSUGWriter):
             ts_sync_files.append(args.user_csv)
             if args.group_csv:
                 ts_sync_files.append(group_csv)
-        else:
+        elif args.filename:
             ts_sync_files.append(args.filename)
+#        else: # Archives SQL file - probably not useful
+#            ts_sync_files.append(args.user_sql)
+#            if args.group_sql:
+#                ts_sync_files.append(group_sql)
 
-        logging.info("apply_changes: {0}".format(args.apply_changes))
-        logging.info("remove_deleted: {0}".format(args.remove_deleted))
+#        logging.info("apply_changes: {0}".format(args.apply_changes))
+#        logging.info("remove_deleted: {0}".format(args.remove_deleted))
         sync = SyncUsersAndGroups(tsurl=args.ts_url, username=args.username,
                                  password=args.password,
                                  disable_ssl=args.disable_ssl)

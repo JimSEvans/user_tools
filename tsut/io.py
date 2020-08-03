@@ -1,9 +1,11 @@
 import ast
 import copy
 import json
-from openpyxl import Workbook
-import xlrd  # reading Excel
+#from openpyxl import Workbook
+#import xlrd  # reading Excel
 import csv
+import cx_Oracle
+import json
 
 from .api import UsersAndGroups, User, Group, eprint
 
@@ -430,5 +432,126 @@ class UGCSVReader:
                     #add User to UsersAndGroups object
                     uag.add_group(g)
                     firstline = 0
+        return uag
+
+
+
+class UGOracleReader:
+    """
+    Reads users and groups from Oracle. 
+    """
+    DEFAULT_USER_FIELD_MAPPING = {
+        "name": "Name",
+        "display_name": "Display Name",
+        "mail": "Email",
+        "password": "Password",
+        "group_names": "Groups",
+        "visibility": "Visibility"
+    }
+    DEFAULT_GROUP_FIELD_MAPPING = {
+        "name": "Name",
+        "display_name": "Display Name",
+        "description": "Description",
+        "group_names": "Groups",
+        "visibility": "Visibility",
+        "privileges": "Privileges"
+    }
+
+    def __init__(self,
+                 user_field_mapping=DEFAULT_USER_FIELD_MAPPING,
+                 group_field_mapping=DEFAULT_GROUP_FIELD_MAPPING):
+        """
+        Creates a new Oracle reader.
+        :param user_field_mapping: The mapping of columns to values for users.
+        :type user_field_mapping: dict of str:str
+        :param group_field_mapping: The mapping of columns to values for groups.
+        :type group_field_mapping: dict of str:str
+        """
+        self.user_field_mapping = copy.copy(user_field_mapping)
+        self.group_field_mapping = copy.copy(group_field_mapping)
+
+        self.validate_fields()
+
+    def validate_fields(self):
+        """
+        Verifies that the minimal required field mappings exist.  Raises a ValueError if not.
+        :return: None
+        :raises: ValueError
+        """
+        if "name" not in self.user_field_mapping.keys():
+            raise ValueError("Missing mapping for 'name'.")
+        if "name" not in self.group_field_mapping.keys():
+            raise ValueError("Missing mapping for 'name'.")
+
+    def read_from_oracle(self, oracle_config, user_sql, group_sql=None): # group_sql doesn't actually do anything with group_sql yet.
+        """
+        Loads users and groups from Oracle.  If the group_sql is not provided, the groups will be created from the
+        user file with just the names.
+        :param user_sql: Path to the user query SQL file.
+        :type user_sql: str
+        :param group_sql: Path to the group query SQL file.
+        :type group_sql: str
+        :return: Users and groups object.
+        :rtype: UsersAndGroups
+        """
+        # initialize UsersAndGroups object to add User and Group objects to
+        uag = UsersAndGroups()
+
+        # Read in Oracle connection config file, SQL file(s), run query, do minimal check on result, and create User.
+
+        # Saving the column name that "name" maps to since I use it again later
+        user_name_column_name = self.user_field_mapping["name"]
+
+        with open(oracle_config) as json_file:
+            config_data = json.load(json_file)
+
+        connect_data = config_data["connect"]
+        user = connect_data["user"]
+        password = connect_data["password"]
+        dsn_dict = connect_data["dsn"]
+        host = dsn_dict["host"]
+        port = dsn_dict["port"]
+        service_name = dsn_dict["service_name"]
+        dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service_name)
+
+        # Connect and query
+        connection = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        cursor = connection.cursor()
+        cursor.execute("SET TRANSACTION READ ONLY")
+
+        with open(user_sql) as sql_f:
+            sql = sql_f.read()
+
+        cursor.execute(sql)
+
+        column_names = [col[0] for col in cursor.description]
+        if user_name_column_name not in column_names:
+            raise ValueError("No column called '%s' in query results" % user_name_column_name)
+        query_results = cursor.fetchall() # a list
+
+        # Create Users
+        for tupl in query_results:
+            line = {} # TODO maybe change name to line_dict
+            for i in range(0, len(column_names)):
+                line.update({column_names[i]: tupl[i]})
+
+            groups_field_raw = line[self.user_field_mapping["group_names"]]
+            groups_field = "[]" if groups_field_raw == "" else groups_field_raw
+
+            u = User(
+                name = line[user_name_column_name],
+                display_name = line[self.user_field_mapping["display_name"]],
+                mail = line[self.user_field_mapping["mail"]],
+                password = line[self.user_field_mapping["password"]],
+                group_names = ast.literal_eval(groups_field),# assumes valid list format, e.g. ["a", "b", ...]
+                visibility = line[self.user_field_mapping["visibility"]]
+                )
+            #add User to UsersAndGroups object
+            uag.add_user(u)
+
+        # TODO If present, run group_sql query, do minimal checks, and create Groups from results.
+
+        cursor.close()
+
         return uag
 

@@ -1,3 +1,6 @@
+*.json
+*.sql
+*.csv
 foo*
 .idea*
 logs/

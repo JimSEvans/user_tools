@@ -13,7 +13,8 @@ setup(
     packages=find_packages(exclude=('tests', 'docs')),
     install_requires=[
         'requests',
-        'xlrd',
-        'openpyxl'
+        'cx_Oracle'
+        #'xlrd',
+        #'openpyxl'
     ]
 )
