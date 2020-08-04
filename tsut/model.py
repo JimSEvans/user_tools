@@ -14,6 +14,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR TH
 from collections import OrderedDict, namedtuple
 import copy
 import json
+import csv
 
 from .util import eprint, public_props, obj_to_json
 
@@ -389,6 +390,39 @@ class UsersAndGroups:
         json_str += "]"
 
         return json_str
+
+    def write_to_csv(self, directory='./', user_csv_filename='users.csv', group_csv_filename='groups.csv'):
+        """
+        Returns a representation containing users and groups.
+        :return: A list of dicts representing users and groups.
+        :rtype: str
+        """
+        uag_json = self.to_json()
+        uag_dicts = json.loads(uag_json)
+
+        if not directory.endswith('/'):
+            directory += '/'
+
+        with open(directory + user_csv_filename, 'w') as user_csv_file, open(directory + group_csv_filename, 'w') as group_csv_file:
+            first_user = 1
+            user_writer = None
+            first_group = 1
+            group_writer = None
+            for entity in uag_dicts:
+                if entity['principalTypeEnum'] == 'LOCAL_USER':
+                    if first_user:
+                        user_writer = csv.DictWriter(user_csv_file, fieldnames=entity.keys())
+                        user_writer.writeheader()
+                        first_user = 0
+                    user_writer.writerow(entity)
+                elif entity['principalTypeEnum'] == 'LOCAL_GROUP':
+                    if first_group:
+                        group_writer = csv.DictWriter(group_csv_file, fieldnames=entity.keys())
+                        group_writer.writeheader()
+                        first_group = 0
+                    group_writer.writerow(entity)
+                else:
+                    logging.warn("Unrecognized principalTypeEnum; can't archive to CSV: {0}".format(entity['principalTypeEnum']))
 
     def load_from_json(self, json_str):
         """

@@ -300,9 +300,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 response.text,
                 )
 
-    def sync_users_and_groups(self, users_and_groups, apply_changes=False,
-                              remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, 
-                              log_dir='logs/', archive_dir='archive/', sync_files=[]):
+    def sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[]):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -356,7 +354,9 @@ class SyncUsersAndGroups(BaseApiInterface):
 
                 self._sync_users_and_groups(users_and_groups=ug_batch,
                                             apply_changes=apply_changes, remove_deleted=remove_deleted,
-                                            log_dir=log_dir, archive_dir=archive_dir, sync_files=sync_files)
+                                            log_dir=log_dir, archive_dir=archive_dir, 
+                                            current_timestamp=current_timestamp, 
+                                            sync_files=sync_files)
 
         # Sync all users and groups.
         else:
@@ -365,6 +365,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 remove_deleted=remove_deleted,
                 log_dir=log_dir,
                 archive_dir=archive_dir,
+                current_timestamp=current_timestamp, 
                 sync_files=sync_files)
 
     @staticmethod
@@ -412,7 +413,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 new_user.groupNames.extend(original_user.groupNames)
 
     @api_call
-    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', sync_files=[]):
+    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[]):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -423,6 +424,9 @@ class SyncUsersAndGroups(BaseApiInterface):
         :type remove_deleted: bool
         :returns: The response from the sync.
         """
+
+#        if current_timestamp=None:
+#            current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f')
 
         is_valid = users_and_groups.is_valid()
         if not is_valid[0]:
@@ -478,12 +482,12 @@ class SyncUsersAndGroups(BaseApiInterface):
             log_dir += '/'
 
         # The log files will contain a timestamp
-        timestamp_for_filename = now.strftime('%d%b%y_%H-%M-%S-%f')
+        current_timestamp = now.strftime('%d%b%y_%H-%M-%S-%f')
 
         # If the --apply_changes flag was absent, this is all in "test mode" and changes are not really being made.
         # This will be capured in the names of the log files.
         if not apply_changes:
-            timestamp_for_filename += '_Test_Mode'
+            current_timestamp += '_Test_Mode'
 
         if response.status_code == 200:
             logging.info("Successfully synced users and groups.")
@@ -545,7 +549,7 @@ class SyncUsersAndGroups(BaseApiInterface):
             #        dir_str += '/'
 
 
-            log_file_name_no_ext = log_dir + 'changes_' + timestamp_for_filename
+            log_file_name_no_ext = log_dir + 'changes_' + current_timestamp
 
             changes_occurred = len(changes_dicts) > 0 
 
@@ -581,18 +585,31 @@ class SyncUsersAndGroups(BaseApiInterface):
                 writer = changes_file_json.write(str(changes_json_bytes))
             logging.info("Log of JSON response saved to ./{0}".format(json_log_file_name))
 
+
             #TODO move synced CSV to archive folder
 
             if True:#apply_changes:
-                logging.info("sync_files: {0}".format(str(sync_files)))
-                for f in sync_files:
-                    shutil.copy2(f, archive_dir + f.split("/")[-1]) # tries to preserve metadata during move
-                #shutil.move(sync_file, archive_dir + sync_file)
+                if len(sync_files) > 0: # i.e. If you are syncing an excel or CSV(s)
+                    logging.info("Archiving these synced files: {0}".format(str(sync_files)))
+                    for f in sync_files:
+                        shutil.copy2(f, archive_dir + f.split("/")[-1]) # tries to preserve metadata during move
+                        #shutil.move(sync_file, archive_dir + sync_file)
+                else: # i.e. If you synced to a DB
+                    logging.info("Saving the UsersAndGroups you sent to TS as a CSV in {0}".format(log_dir))
+                    sent_user_csv_filename = '{0}_{1}.csv'.format('sent_user_data', current_timestamp)
+                    sent_group_csv_filename = '{0}_{1}.csv'.format('sent_group_data', current_timestamp) #log_file_name_no_ext.replace('changes', 'archive_of_sent_data')
+                    users_and_groups.write_to_csv(log_dir, sent_user_csv_filename, sent_group_csv_filename)#'{0}.csv'.format(archive_csv_filename))
 
+
+#logging.info("Finished.")
+#print(len(log.handlers))
+#for h in log.handlers:
+#    h.close()
+#    log.removeFilter(h)
 
             # TODO log the sent data as CSV/JSON to log_dir but only if it doesn't match the sync files (user_csv/group_csv)
             
-            #with open(archive_dir + 'archive_' + timestamp_for_filename + '.json') as archive_file_json:
+            #with open(archive_dir + 'archive_' + current_timestamp + '.json') as archive_file_json:
             #    archive_file_json.write(str(json_str.encode("utf-8")))
             #    logging.info("Archive of JSON representing the UsersAndGroups object sent to TS was saved to ./{0}".format(json_log_file_name))
             
@@ -601,7 +618,7 @@ class SyncUsersAndGroups(BaseApiInterface):
         else:
             logging.error("Failed to sync users and groups.")
             logging.info(response.text.encode("utf-8"))
-            with open("ts_users_and_groups_for_last_failed_sync.json", "w") as outfile:
+            with open("{0}users_and_groups_failed_sync_{1}.json".format(log_dir, current_timestamp), "w") as outfile:
                 outfile.write(str(json_str.encode("utf-8")))
             raise requests.ConnectionError(
                 "Error syncing users and groups (%d)" % response.status_code,

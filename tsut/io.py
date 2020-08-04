@@ -483,7 +483,7 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_config, user_sql, group_sql=None): # group_sql doesn't actually do anything with group_sql yet.
+    def read_from_oracle(self, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
         """
         Loads users and groups from Oracle.  If the group_sql is not provided, the groups will be created from the
         user file with just the names.
@@ -494,6 +494,10 @@ class UGOracleReader:
         :return: Users and groups object.
         :rtype: UsersAndGroups
         """
+        # check archive_dir (for achiving query results)
+        if not archive_dir.endswith('/'):
+            archive_dir += '/'
+
         # initialize UsersAndGroups object to add User and Group objects to
         uag = UsersAndGroups()
 
@@ -529,28 +533,38 @@ class UGOracleReader:
             raise ValueError("No column called '%s' in query results" % user_name_column_name)
         query_results = cursor.fetchall() # a list
 
-        # Create Users
-        for tupl in query_results:
-            line = {} # TODO maybe change name to line_dict
-            for i in range(0, len(column_names)):
-                line.update({column_names[i]: tupl[i]})
+        # Create Users and also add to archive file
 
-            groups_field_raw = line[self.user_field_mapping["group_names"]]
-            groups_field = "[]" if groups_field_raw == "" else groups_field_raw
+        user_archive_filename = '{0}users_to_sync_from_oracle{1}.csv'.format(archive_dir, current_timestamp)
 
-            u = User(
-                name = line[user_name_column_name],
-                display_name = line[self.user_field_mapping["display_name"]],
-                mail = line[self.user_field_mapping["mail"]],
-                password = line[self.user_field_mapping["password"]],
-                group_names = ast.literal_eval(groups_field),# assumes valid list format, e.g. ["a", "b", ...]
-                visibility = line[self.user_field_mapping["visibility"]]
-                )
-            #add User to UsersAndGroups object
-            uag.add_user(u)
+        with open(user_archive_filename, 'w') as user_archive_file:
+            user_writer = csv.DictWriter(user_archive_file, fieldnames=column_names)
+            user_writer.writeheader()
+
+            for tupl in query_results:
+                line = {} # TODO maybe change name to line_dict
+                for i in range(0, len(column_names)):
+                    line.update({column_names[i]: tupl[i]})
+                user_writer.writerow(line)
+
+                groups_field_raw = line[self.user_field_mapping["group_names"]]
+                groups_field = "[]" if groups_field_raw == "" else groups_field_raw
+
+                u = User(
+                    name = line[user_name_column_name],
+                    display_name = line[self.user_field_mapping["display_name"]],
+                    mail = line[self.user_field_mapping["mail"]],
+                    password = line[self.user_field_mapping["password"]],
+                    group_names = ast.literal_eval(groups_field),# assumes valid list format, e.g. ["a", "b", ...]
+                    visibility = line[self.user_field_mapping["visibility"]]
+                    )
+                #add User to UsersAndGroups object
+                uag.add_user(u)
+
+
+
 
         # TODO If present, run group_sql query, do minimal checks, and create Groups from results.
-
         cursor.close()
 
         return uag

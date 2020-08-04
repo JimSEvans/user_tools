@@ -2,7 +2,7 @@ import argparse
 from abc import abstractmethod
 import copy
 import logging
-#import os
+import datetime as dt
 
 from tsut.api import SyncUsersAndGroups
 #from tsut.model import UsersAndGroups
@@ -39,6 +39,8 @@ The following assumptions are made about the DDL being read:
 This file contains classes for easily creation applications that work with the ThoughtSpot user/group APIs
 """
 
+now = dt.datetime.now()
+current_timestamp = now.strftime('%d%b%y_%H-%M-%S-%f')
 
 # Defines the parameters needed for all parsers that will connect to ThoughtSpot.
 def add_cnx_parser_arguments(parser):
@@ -268,6 +270,8 @@ class TSUGOracleReader(TSUGReader):
         parser.add_argument("--oracle_config_json", help="Path to SQL file to read query string from, to get users.")
         parser.add_argument("--user_sql", help="Path to SQL file to read query string from, to get users.")
         parser.add_argument("--group_sql", help="Path to SQL file to read query string from, to get groups.")
+        parser.add_argument("--log_dir", default='./logs', help="Identifies the location to save logs of changes made.")
+        parser.add_argument("--archive_dir", default='./archive', help="Identifies the location to archive the successfully synced files and or query results.")
 
     def get_users_and_groups(self, args):
         """
@@ -277,8 +281,20 @@ class TSUGOracleReader(TSUGReader):
         :return: Users and groups that were read.
         :rtype: UsersAndGroups
         """
+
+        # Configure root logger so that it logs to file in args.log_dir in addition to console.
+        log_dir = args.log_dir
+        if not log_dir.endswith('/'):
+            log_dir += '/'
+        logging.basicConfig(filename='{0}log_messages_{1}.log'.format(log_dir, current_timestamp), filemode='w') # Initiate root logger with file handler
+        logger = logging.getLogger()
+        sh = logging.StreamHandler()
+        logger.addHandler(sh) # adds second handler to write to console
+        logger.info("Current time: {}".format(str(now)))
+        logging.info("Logger configured from Oracle Reader class.")
+
         reader = UGOracleReader()
-        ugs = reader.read_from_oracle(oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql)
+        ugs = reader.read_from_oracle(oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
         return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------
@@ -559,6 +575,7 @@ class TSUGSyncWriter(TSUGWriter):
                                    create_groups=args.create_groups,
                                    log_dir=args.log_dir,
                                    archive_dir=args.archive_dir,
+                                   current_timestamp=current_timestamp,
                                    sync_files=ts_sync_files)
 
 
