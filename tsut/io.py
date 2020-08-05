@@ -507,9 +507,8 @@ class UGOracleReader:
         user_name_column_name = self.user_field_mapping["name"]
 
         with open(oracle_config) as json_file:
-            config_data = json.load(json_file)
+            connect_data = json.load(json_file)
 
-        connect_data = config_data["connect"]
         user = connect_data["user"]
         password = connect_data["password"]
         dsn_dict = connect_data["dsn"]

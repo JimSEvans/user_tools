@@ -21,6 +21,8 @@ import datetime as dt
 import csv
 import os
 import shutil
+import smtplib
+import ssl
 
 from .model import User, Group, UsersAndGroups
 from .util import eprint
@@ -300,7 +302,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 response.text,
                 )
 
-    def sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[]):
+    def sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -309,18 +311,15 @@ class SyncUsersAndGroups(BaseApiInterface):
         :type apply_changes: bool
         :param remove_deleted: Flag to removed deleted users.  If true, delete.  Cannot be used with batch_size.
         :type remove_deleted: bool
-        :param batch_size: The size of users to batch into a load.  Note that this cannot be combined with
-        remove_deleted.
-        :type batch_size: int
-        :param create_groups: Flag to indicate if groups should be created.  True means add to groups that users
-        are assigned to, but are not in the group list.
-        :type create_groups: bool
-        :param merge_groups: Flag to indicate if groups should be merged.  True means add to old groups.
-        :type merge_groups: bool
-        :param log_dir: Directory to save log files to
+        :param log_dir: Path to log directory.
         :type log_dir: str
-        :param archive_dir: Directory to save log files to
+        :param archive_dir: Path to archive directory.
         :type archive_dir: str
+        :param current_timestamp: Timestamp, usable in file names.
+        :type current_timestamp: str
+        :param email_config_json: Path to JSON email config file.
+        :type email_config_json: str
+        :returns: The response from the sync.
         """
 
         if not apply_changes:
@@ -356,6 +355,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                                             apply_changes=apply_changes, remove_deleted=remove_deleted,
                                             log_dir=log_dir, archive_dir=archive_dir, 
                                             current_timestamp=current_timestamp, 
+                                            email_config_json=email_config_json, 
                                             sync_files=sync_files)
 
         # Sync all users and groups.
@@ -366,6 +366,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 log_dir=log_dir,
                 archive_dir=archive_dir,
                 current_timestamp=current_timestamp, 
+                email_config_json=email_config_json, 
                 sync_files=sync_files)
 
     @staticmethod
@@ -413,7 +414,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 new_user.groupNames.extend(original_user.groupNames)
 
     @api_call
-    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[]):
+    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -422,15 +423,46 @@ class SyncUsersAndGroups(BaseApiInterface):
         :type apply_changes: bool
         :param remove_deleted: Flag to removed deleted users.  If true, delete.  Cannot be used with batch_size.
         :type remove_deleted: bool
+        :param log_dir: Path to log directory.
+        :type log_dir: str
+        :param archive_dir: Path to archive directory.
+        :type archive_dir: str
+        :param current_timestamp: Timestamp, usable in file names.
+        :type current_timestamp: str
+        :param email_config_json: Path to JSON email config file.
+        :type email_config_json: str
         :returns: The response from the sync.
         """
+        
+        # Set up email server and credentials for sending outcome alerts.
+        if email_config_json:
+            with open(email_config_json) as json_file:
+                email_data = json.load(json_file)
+                smtp_server = email_data['smtp_server']
+                port = 587 #email_data['port']
+                sender_email = email_data['sender_email']
+                receiver_email = email_data['receiver_email']
+                password = email_data['password']
 
-#        if current_timestamp=None:
-#            current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f')
+            # Create a secure SSL context
+            context = ssl.create_default_context()
 
         is_valid = users_and_groups.is_valid()
         if not is_valid[0]:
             # print("Invalid user and group structure.")
+            if email_config_json:
+                message = """\
+Subject: Failure - Sync with TS
+
+Sync with TS failed due to invalid users/groups."""
+                with smtplib.SMTP(smtp_server, port) as server:
+                    #server.ehlo()
+                    server.starttls(context=context)
+                    #server.ehlo()
+                    server.login(sender_email, password)
+                    server.sendmail(sender_email, receiver_email, message)
+                print("SUPPOSEDLY SENT MAIL")
+            logging.error("Invalid users and groups.")
             raise Exception("Invalid users and groups")
 
         url = self.format_url(SyncUsersAndGroups.SYNC_ALL_URL)
@@ -488,7 +520,7 @@ class SyncUsersAndGroups(BaseApiInterface):
         # This will be capured in the names of the log files.
         if not apply_changes:
             current_timestamp += '_Test_Mode'
-
+        
         if response.status_code == 200:
             logging.info("Successfully synced users and groups.")
             changes_json_bytes = response.text.encode("utf-8")
@@ -585,9 +617,6 @@ class SyncUsersAndGroups(BaseApiInterface):
                 writer = changes_file_json.write(str(changes_json_bytes))
             logging.info("Log of JSON response saved to ./{0}".format(json_log_file_name))
 
-
-            #TODO move synced CSV to archive folder
-
             if True:#apply_changes:
                 if len(sync_files) > 0: # i.e. If you are syncing an excel or CSV(s)
                     logging.info("Archiving these synced files: {0}".format(str(sync_files)))
@@ -601,17 +630,24 @@ class SyncUsersAndGroups(BaseApiInterface):
                     users_and_groups.write_to_csv(log_dir, sent_user_csv_filename, sent_group_csv_filename)#'{0}.csv'.format(archive_csv_filename))
 
 
-#logging.info("Finished.")
-#print(len(log.handlers))
-#for h in log.handlers:
-#    h.close()
-#    log.removeFilter(h)
+            #logging.info("Finished.")
+            #print(len(log.handlers))
+            #for h in log.handlers:
+            #    h.close()
+            #    log.removeFilter(h)
 
-            # TODO log the sent data as CSV/JSON to log_dir but only if it doesn't match the sync files (user_csv/group_csv)
-            
-            #with open(archive_dir + 'archive_' + current_timestamp + '.json') as archive_file_json:
-            #    archive_file_json.write(str(json_str.encode("utf-8")))
-            #    logging.info("Archive of JSON representing the UsersAndGroups object sent to TS was saved to ./{0}".format(json_log_file_name))
+            # TODO send success email
+            if email_config_json:
+                message = """\
+Subject: Success - Sync with TS
+
+Sync with TS was successful."""
+                with smtplib.SMTP(smtp_server, port) as server:
+                    #server.ehlo()
+                    server.starttls(context=context)
+                    #server.ehlo()
+                    server.login(sender_email, password)
+                    server.sendmail(sender_email, receiver_email, message)
             
             return response
 
@@ -624,6 +660,19 @@ class SyncUsersAndGroups(BaseApiInterface):
                 "Error syncing users and groups (%d)" % response.status_code,
                 response.text,
             )
+
+            # TODO send failure email
+            if email_config_json:
+                message = """\
+Subject: Failure - Sync with TS
+
+Sync with TS failed, with status code {0}.""".format(response.status_code)
+                with smtplib.SMTP(smtp_server, port) as server:
+                    #server.ehlo()
+                    server.starttls(context=context)
+                    #server.ehlo()
+                    server.login(sender_email, password)
+                    server.sendmail(sender_email, receiver_email, message)
 
     @api_call
     def delete_users(self, usernames):
