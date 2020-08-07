@@ -258,7 +258,7 @@ class TSUGOracleReader(TSUGReader):
         """
 
         super(TSUGOracleReader, self).__init__(
-            required_arguments=["oracle_config_json", "user_sql"]
+            required_arguments=["user_sql"]
         )
 
     def add_parser_arguments(self, parser):
@@ -268,6 +268,9 @@ class TSUGOracleReader(TSUGReader):
         """
         add_cnx_parser_arguments(parser)
         parser.add_argument("--oracle_config_json", help="Path to SQL file to read query string from, to get users.")
+        parser.add_argument("--oracle_u", help="Oracle user.")
+        parser.add_argument("--oracle_pw", help="Oracle password.")
+        parser.add_argument("--oracle_dsn", help="Oracle DSN. Your tnsnames.ora starts out: '<DSN>=.....'. Makes sure that file can be found, e.g., set $TNS_ADMIN")
         parser.add_argument("--user_sql", help="Path to SQL file to read query string from, to get users.")
         parser.add_argument("--group_sql", help="Path to SQL file to read query string from, to get groups.")
         parser.add_argument("--log_dir", default='./logs', help="Identifies the location to save logs of changes made.")
@@ -294,7 +297,7 @@ class TSUGOracleReader(TSUGReader):
         logging.info("Logger configured from Oracle Reader class.")
 
         reader = UGOracleReader()
-        ugs = reader.read_from_oracle(oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
+        ugs = reader.read_from_oracle(oracle_u=args.oracle_u, oracle_pw=args.oracle_pw, oracle_dsn=args.oracle_dsn, oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
         return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------

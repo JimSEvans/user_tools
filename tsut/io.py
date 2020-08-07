@@ -1,8 +1,8 @@
 import ast
 import copy
 import json
-#from openpyxl import Workbook
-#import xlrd  # reading Excel
+from openpyxl import Workbook
+import xlrd  # reading Excel
 import csv
 import cx_Oracle
 import json
@@ -446,6 +446,7 @@ class UGOracleReader:
         "mail": "Email",
         "password": "Password",
         "group_names": "Groups",
+        "group_names2": "Groups2",
         "visibility": "Visibility"
     }
     DEFAULT_GROUP_FIELD_MAPPING = {
@@ -453,6 +454,7 @@ class UGOracleReader:
         "display_name": "Display Name",
         "description": "Description",
         "group_names": "Groups",
+        "group_names2": "Groups2",
         "visibility": "Visibility",
         "privileges": "Privileges"
     }
@@ -483,7 +485,7 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
+    def read_from_oracle(self, oracle_u, oracle_pw, oracle_dsn, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
         """
         Loads users and groups from Oracle.  If the group_sql is not provided, the groups will be created from the
         user file with just the names.
@@ -506,19 +508,22 @@ class UGOracleReader:
         # Saving the column name that "name" maps to since I use it again later
         user_name_column_name = self.user_field_mapping["name"]
 
-        with open(oracle_config) as json_file:
-            connect_data = json.load(json_file)
+        if oracle_u and oracle_pw and oracle_dsn:
+            connection = cx_Oracle.connect(oracle_u, oracle_pw, oracle_dsn) # If this causes error, try setting $TNS_ADMIN to the dir containing tnsnames.ora
+        else:
+            with open(oracle_config) as json_file:
+                connect_data = json.load(json_file)
 
-        user = connect_data["user"]
-        password = connect_data["password"]
-        dsn_dict = connect_data["dsn"]
-        host = dsn_dict["host"]
-        port = dsn_dict["port"]
-        service_name = dsn_dict["service_name"]
-        dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service_name)
-
-        # Connect and query
-        connection = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+            user = connect_data["user"]
+            password = connect_data["password"]
+            dsn_dict = connect_data["dsn"]
+            host = dsn_dict["host"]
+            port = dsn_dict["port"]
+            service_name = dsn_dict["service_name"]
+            dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service_name)
+            # Connect
+            connection = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        # Query
         cursor = connection.cursor()
         cursor.execute("SET TRANSACTION READ ONLY")
 
@@ -549,12 +554,18 @@ class UGOracleReader:
                 groups_field_raw = line[self.user_field_mapping["group_names"]]
                 groups_field = "[]" if groups_field_raw == "" else groups_field_raw
 
+                if self.user_field_mapping["group_names2"] in line.keys():
+                    groups_field2_raw = line[self.user_field_mapping["group_names2"]]
+                else:
+                    groups_field2_raw = "[]"
+                groups_field2 = "[]" if groups_field_raw == "" else groups_field_raw # even if the column is there, it could be blank
+
                 u = User(
                     name = line[user_name_column_name],
                     display_name = line[self.user_field_mapping["display_name"]],
                     mail = line[self.user_field_mapping["mail"]],
                     password = line[self.user_field_mapping["password"]],
-                    group_names = ast.literal_eval(groups_field),# assumes valid list format, e.g. ["a", "b", ...]
+                    group_names = ast.literal_eval(groups_field) + ast.literal_eval(groups_field2),# assumes valid list format, e.g. ["a", "b", ...]
                     visibility = line[self.user_field_mapping["visibility"]]
                     )
                 #add User to UsersAndGroups object

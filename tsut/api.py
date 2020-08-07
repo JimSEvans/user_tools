@@ -441,7 +441,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 smtp_server = email_data['smtp_server']
                 port = 587 #email_data['port']
                 sender_email = email_data['sender_email']
-                receiver_email = email_data['receiver_email']
+                receiver_emails = email_data['receiver_emails']
                 password = email_data['password']
 
             # Create a secure SSL context
@@ -460,8 +460,8 @@ Sync with TS failed due to invalid users/groups."""
                     server.starttls(context=context)
                     #server.ehlo()
                     server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_email, message)
-                print("SUPPOSEDLY SENT MAIL")
+                    server.sendmail(sender_email, receiver_emails, message)
+                logging.info("Sent failure email")
             logging.error("Invalid users and groups.")
             raise Exception("Invalid users and groups")
 
@@ -647,11 +647,24 @@ Sync with TS was successful."""
                     server.starttls(context=context)
                     #server.ehlo()
                     server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_email, message)
+                    server.sendmail(sender_email, receiver_emails, message)
+                logging.info("Sent success email")
             
             return response
 
         else:
+            # Send failure email
+            if email_config_json:
+                message = """\
+Subject: Failure - Sync with TS
+
+Sync with TS failed, with status code {0}.""".format(response.status_code)
+                with smtplib.SMTP(smtp_server, port) as server:
+                    server.starttls(context=context)
+                    server.login(sender_email, password)
+                    server.sendmail(sender_email, receiver_emails, message)
+                logging.info("Sent failure email")
+
             logging.error("Failed to sync users and groups.")
             logging.info(response.text.encode("utf-8"))
             with open("{0}users_and_groups_failed_sync_{1}.json".format(log_dir, current_timestamp), "w") as outfile:
@@ -661,18 +674,6 @@ Sync with TS was successful."""
                 response.text,
             )
 
-            # TODO send failure email
-            if email_config_json:
-                message = """\
-Subject: Failure - Sync with TS
-
-Sync with TS failed, with status code {0}.""".format(response.status_code)
-                with smtplib.SMTP(smtp_server, port) as server:
-                    #server.ehlo()
-                    server.starttls(context=context)
-                    #server.ehlo()
-                    server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_email, message)
 
     @api_call
     def delete_users(self, usernames):
