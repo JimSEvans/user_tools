@@ -1,11 +1,11 @@
 import ast
 import copy
 import json
-from openpyxl import Workbook
-import xlrd  # reading Excel
 import csv
 import cx_Oracle
 import json
+#from openpyxl import Workbook
+#import xlrd  # reading Excel
 
 from .api import UsersAndGroups, User, Group, eprint
 
@@ -485,7 +485,7 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_u, oracle_pw, oracle_dsn, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
+    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
         """
         Loads users and groups from Oracle.  If the group_sql is not provided, the groups will be created from the
         user file with just the names.
@@ -508,7 +508,8 @@ class UGOracleReader:
         # Saving the column name that "name" maps to since I use it again later
         user_name_column_name = self.user_field_mapping["name"]
 
-        if oracle_u and oracle_pw and oracle_dsn:
+        if oracle_u_pw_dsn:
+            oracle_u, oracle_pw, oracle_dsn = oracle_u_pw_dsn.split(',')
             connection = cx_Oracle.connect(oracle_u, oracle_pw, oracle_dsn) # If this causes error, try setting $TNS_ADMIN to the dir containing tnsnames.ora
         else:
             with open(oracle_config) as json_file:
@@ -570,8 +571,6 @@ class UGOracleReader:
                     )
                 #add User to UsersAndGroups object
                 uag.add_user(u)
-
-
 
 
         # TODO If present, run group_sql query, do minimal checks, and create Groups from results.
