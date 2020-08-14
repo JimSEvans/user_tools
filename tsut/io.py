@@ -2,10 +2,11 @@ import ast
 import copy
 import json
 import csv
-import cx_Oracle
 import json
+import os
 #from openpyxl import Workbook
 #import xlrd  # reading Excel
+import cx_Oracle
 
 from .api import UsersAndGroups, User, Group, eprint
 
@@ -496,6 +497,17 @@ class UGOracleReader:
         :return: Users and groups object.
         :rtype: UsersAndGroups
         """
+
+        if not archive_dir:
+            archive_dir = './archive/'
+
+        try:
+            os.makedirs(archive_dir)
+        except FileExistsError:
+            if os.path.isfile(archive_dir):
+                logging.warn("There is already a file called '{0}'. Query result CSV archives will instead be saved to '.' (the current working directory).").format(archive_dir)
+                archive_dir = './'
+
         # check archive_dir (for achiving query results)
         if not archive_dir.endswith('/'):
             archive_dir += '/'
