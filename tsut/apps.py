@@ -258,7 +258,7 @@ class TSUGOracleReader(TSUGReader):
         """
 
         super(TSUGOracleReader, self).__init__(
-            required_arguments=["user_sql"]
+            required_arguments=["users_sql"]
         )
 
     def add_parser_arguments(self, parser):
@@ -269,8 +269,8 @@ class TSUGOracleReader(TSUGReader):
         add_cnx_parser_arguments(parser)
         parser.add_argument("--oracle_config_json", help="Path to SQL file to read query string from, to get users.")
         parser.add_argument("--oracle_u_pw_dsn", help="Oracle user,password,DSN as a single comma-separated argument. Your tnsnames.ora starts out: '<DSN>=.....'. Makes sure that file can be found, e.g., set $TNS_ADMIN")
-        parser.add_argument("--user_sql", help="Path to SQL file to read query string from, to get users.")
-        parser.add_argument("--group_sql", help="Path to SQL file to read query string from, to get groups.")
+        parser.add_argument("--users_sql", help="Path to SQL file to read query string from, to get users.")
+        parser.add_argument("--groups_sql", help="Path to SQL file to read query string from, to get groups.")
         parser.add_argument("--log_dir", default='./logs', help="Identifies the location to save logs of changes made.")
         parser.add_argument("--archive_dir", default='./archive', help="Identifies the location to archive the successfully synced files and or query results.")
 
@@ -295,7 +295,7 @@ class TSUGOracleReader(TSUGReader):
         logging.info("Logger configured from Oracle Reader class.")
 
         reader = UGOracleReader()
-        ugs = reader.read_from_oracle(oracle_u_pw_dsn=args.oracle_u_pw_dsn, oracle_config=args.oracle_config_json, user_sql=args.user_sql, group_sql=args.group_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
+        ugs = reader.read_from_oracle(oracle_u_pw_dsn=args.oracle_u_pw_dsn, oracle_config=args.oracle_config_json, users_sql=args.users_sql, groups_sql=args.groups_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
         return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------
@@ -540,8 +540,8 @@ class TSUGSyncWriter(TSUGWriter):
                             help="Path to email configuration JSON file.")
         parser.add_argument("--user_csv", help="Path to CSV file to read users from.")
         parser.add_argument("--group_csv", help="Path to CSV file to read groups from.")
-        parser.add_argument("--user_sql", help="Path to CSV file to read users from.") #TODO help msg bad
-        parser.add_argument("--group_sql", help="Path to CSV file to read groups from.")
+        parser.add_argument("--users_sql", help="Path to CSV file to read users from.") #TODO help msg bad
+        parser.add_argument("--groups_sql", help="Path to CSV file to read groups from.")
         parser.add_argument("--filename", help="Path to Excel file to read users and groups from.") #TODO help msg bad
 
     def write_users_and_groups(self, args, ugs):
@@ -561,9 +561,9 @@ class TSUGSyncWriter(TSUGWriter):
         elif args.filename:
             ts_sync_files.append(args.filename)
 #        else: # Archives SQL file - probably not useful
-#            ts_sync_files.append(args.user_sql)
-#            if args.group_sql:
-#                ts_sync_files.append(group_sql)
+#            ts_sync_files.append(args.users_sql)
+#            if args.groups_sql:
+#                ts_sync_files.append(groups_sql)
 
 #        logging.info("apply_changes: {0}".format(args.apply_changes))
 #        logging.info("remove_deleted: {0}".format(args.remove_deleted))

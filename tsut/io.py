@@ -485,14 +485,14 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, user_sql, group_sql, archive_dir, current_timestamp): # group_sql doesn't actually do anything with group_sql yet.
+    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, users_sql, groups_sql, archive_dir, current_timestamp): # groups_sql doesn't actually do anything with groups_sql yet.
         """
-        Loads users and groups from Oracle.  If the group_sql is not provided, the groups will be created from the
+        Loads users and groups from Oracle.  If the groups_sql is not provided, the groups will be created from the
         user file with just the names.
-        :param user_sql: Path to the user query SQL file.
-        :type user_sql: str
-        :param group_sql: Path to the group query SQL file.
-        :type group_sql: str
+        :param users_sql: Path to the user query SQL file.
+        :type users_sql: str
+        :param groups_sql: Path to the group query SQL file.
+        :type groups_sql: str
         :return: Users and groups object.
         :rtype: UsersAndGroups
         """
@@ -528,7 +528,7 @@ class UGOracleReader:
         cursor = connection.cursor()
         cursor.execute("SET TRANSACTION READ ONLY")
 
-        with open(user_sql) as sql_f:
+        with open(users_sql) as sql_f:
             sql = sql_f.read()
 
         cursor.execute(sql)
@@ -573,7 +573,7 @@ class UGOracleReader:
                 uag.add_user(u)
 
 
-        # TODO If present, run group_sql query, do minimal checks, and create Groups from results.
+        # TODO If present, run groups_sql query, do minimal checks, and create Groups from results.
         cursor.close()
 
         return uag
