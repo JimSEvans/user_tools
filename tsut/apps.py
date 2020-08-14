@@ -3,6 +3,7 @@ from abc import abstractmethod
 import copy
 import logging
 import datetime as dt
+import os
 
 from tsut.api import SyncUsersAndGroups
 #from tsut.model import UsersAndGroups
@@ -285,8 +286,20 @@ class TSUGOracleReader(TSUGReader):
 
         # Configure root logger so that it logs to file in args.log_dir in addition to console.
         log_dir = args.log_dir
+        if not log_dir:
+            log_dir = './logs/'
+
+
+        try:
+            os.makedirs(log_dir)
+        except FileExistsError:
+            if os.path.isfile(log_dir):
+                logging.warn("There is already a file called '{0}'. Logs will instead be saved to '.' (the current working directory).").format(log_dir)
+                log_dir = './'
+
         if not log_dir.endswith('/'):
             log_dir += '/'
+            
         logging.basicConfig(filename='{0}log_messages_{1}.log'.format(log_dir, current_timestamp), filemode='w') # Initiate root logger with file handler
         logger = logging.getLogger()
         sh = logging.StreamHandler()
