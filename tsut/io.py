@@ -571,7 +571,8 @@ class UGOracleReader:
                     groups_field2_raw = line[self.user_field_mapping["group_names2"]]
                 else:
                     groups_field2_raw = "[]"
-                groups_field2 = "[]" if groups_field_raw == "" else groups_field_raw # even if the column is there, it could be blank
+
+                groups_field2 = "[]" if groups_field2_raw == "" else groups_field2_raw # even if the column is there, it could be blank
 
                 u = User(
                     name = line[user_name_column_name],
