@@ -411,7 +411,10 @@ class UsersAndGroups:
             for entity in uag_dicts:
                 if entity['principalTypeEnum'] == 'LOCAL_USER':
                     if first_user:
-                        user_writer = csv.DictWriter(user_csv_file, fieldnames=entity.keys())
+                        column_names = list(entity.keys())
+                        if 'mail' not in entity.keys(): # These 2 lines are basically a hack. I might as well hard-code the column names, but only this one was necessary to guarantee the right column names.
+                            column_names.append('mail') #
+                        user_writer = csv.DictWriter(user_csv_file, fieldnames=column_names)
                         user_writer.writeheader()
                         first_user = 0
                     user_writer.writerow(entity)
