@@ -4,6 +4,8 @@ import json
 import csv
 import json
 import os
+import re
+import logging
 #from openpyxl import Workbook
 #import xlrd  # reading Excel
 import cx_Oracle
@@ -448,6 +450,7 @@ class UGOracleReader:
         "password": "Password",
         "group_names": "Groups",
         "group_names2": "Groups2",
+        "group_names3": "Groups3",
         "visibility": "Visibility"
     }
     DEFAULT_GROUP_FIELD_MAPPING = {
@@ -456,6 +459,7 @@ class UGOracleReader:
         "description": "Description",
         "group_names": "Groups",
         "group_names2": "Groups2",
+        "group_names3": "Groups3",
         "visibility": "Visibility",
         "privileges": "Privileges"
     }
@@ -486,7 +490,7 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, users_sql, groups_sql, archive_dir, current_timestamp): # groups_sql doesn't actually do anything with groups_sql yet.
+    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, users_sql, groups_sql, archive_dir, default_security_group,current_timestamp): # groups_sql doesn't actually do anything with groups_sql yet.
         """
         Loads users and groups from Oracle.  If the groups_sql is not provided, the groups will be created from the
         user file with just the names.
@@ -564,30 +568,184 @@ class UGOracleReader:
                     line.update({column_names[i]: tupl[i]})
                 user_writer.writerow(line)
 
-                groups_field_raw = line[self.user_field_mapping["group_names"]]
-                groups_field = "[]" if groups_field_raw == "" else groups_field_raw
+                groups_field = "[]"
+                groups2_field = "[]"
+                groups3_field = "[]"
 
-                if self.user_field_mapping["group_names2"] in line.keys():
-                    groups_field2_raw = line[self.user_field_mapping["group_names2"]]
-                else:
-                    groups_field2_raw = "[]"
+                if self.group_field_mapping["group_names"] in line.keys():
+                    groups_field_val = line[self.group_field_mapping["group_names"]]
+                    if groups_field_val:
+                        groups_field = groups_field_val
+                    else:
+                        logging.warn("\"Groups\" is NULL in query results. Treating as \"[]\".")
 
-                groups_field2 = "[]" if groups_field2_raw == "" else groups_field2_raw # even if the column is there, it could be blank
+                if 'group_names2' in self.group_field_mapping.keys():
+                    if self.group_field_mapping["group_names2"] in line.keys():
+                        groups2_field_val = line[self.group_field_mapping["group_names2"]]
+                        if groups2_field_val:
+                            groups2_field = groups2_field_val
+                        else:
+                            logging.warn("\"Groups2\" is NULL in query results. Treating as \"[]\".")
+
+                if 'group_names3' in self.group_field_mapping.keys():
+                    if self.group_field_mapping["group_names3"] in line.keys():
+                        groups3_field_val = line[self.group_field_mapping["group_names3"]]
+                        if groups3_field_val:
+                            groups3_field = groups3_field_val
+                        else:
+                            logging.warn("\"Groups3\" is NULL in query results. Treating as \"[]\".")
+
+
+                groups1, groups2, groups3 = [list(),list(),list()]
+
+                try:
+                    groups1 = ast.literal_eval(groups_field)
+                except:
+                    if default_security_group:
+                        logging.warn("\"Groups\" column could not be evaluated as a Python list; using [{0},].".format(default_security_group))
+                        groups1 = [default_security_group,]
+                    else:
+                        logging.warn("\"Groups\" column could not be evaluated as a Python list; using [].")
+                        groups1 = []
+
+                # TODO the whole default_security_group thing is a hack
+                if len(groups1) != len(set(groups1)):
+                    mode = max(set(groups1), key = groups1.count)
+                    #logging.warn("\"Groups1\" column contained at least 1 repeat, e.g. {0}.".format(mode))
+                    logging.warn("\"Groups\" column contained at least 1 repeat. Using [{0},] instead of the list containing repeats. The main or only offender: {1}.".format(default_security_group, mode))
+
+                try:
+                    groups2 = ast.literal_eval(groups_field)
+                except:
+                    logging.warn("\"Groups2\" column could not be evaluated as a Python list")
+
+
+                try:
+                    groups3 = ast.literal_eval(groups3_field)
+                except:
+                    logging.warn("\"Groups3\" column could not be evaluated as a Python list")
+
+
+                #if len(groups3) > 0:
+                #    if bool(re.match("""\(\d+\).+""", groups3[0])):
+                #        m = re.search("""\((\d+)\).+""", groups3[0])
+                #        groups3[0] = m.group(1)
+                #    else:
+                #        logging.warn("Groups3 value is unexpected: {}".format(str(groups3)))
+
+                all_groups_unfiltered = groups1 + groups2 + groups3 # assumes valid list format, e.g. ["a", "b", ...]
+
+                # TODO this is an arbirary rule that I shouldn't hard-code in
+                all_groups = [x for x in all_groups_unfiltered if not x.endswith('_')]
+                diff = list(set(all_groups_unfiltered) - set(all_groups))
+                if len(diff) > 0:
+                #if len(all_groups_unfiltered) > len(all_groups):
+                    logging.warn("For {0}, you were going to add group(s) with a name ending in an '_', which this code is preventing: {{1}}".format(line[user_name_column_name],str(diff)))
+                    #for x in diff:
+                    #    logging.warn("Bad group name: {0}.".format(x))
 
                 u = User(
                     name = line[user_name_column_name],
                     display_name = line[self.user_field_mapping["display_name"]],
                     mail = line[self.user_field_mapping["mail"]],
                     password = line[self.user_field_mapping["password"]],
-                    group_names = ast.literal_eval(groups_field) + ast.literal_eval(groups_field2),# assumes valid list format, e.g. ["a", "b", ...]
+                    group_names = all_groups,
                     visibility = line[self.user_field_mapping["visibility"]]
                     )
                 #add User to UsersAndGroups object
                 uag.add_user(u)
 
 
-        # TODO If present, run groups_sql query, do minimal checks, and create Groups from results.
-        cursor.close()
+        if groups_sql:
+
+            group_name_column_name = self.group_field_mapping["name"]
+
+            cursor.execute("SET TRANSACTION READ ONLY")
+
+            with open(groups_sql) as sql_f:
+                sql = sql_f.read()
+
+            cursor.execute(sql)
+
+            column_names = [col[0] for col in cursor.description]
+            if group_name_column_name not in column_names:
+                raise ValueError("No column called '%s' in query results" % group_name_column_name)
+            query_results = cursor.fetchall() # a list
+
+            # Create Users and also add to archive file
+
+            group_archive_filename = '{0}groups_to_sync_from_oracle{1}.csv'.format(archive_dir, current_timestamp)
+
+            with open(group_archive_filename, 'w') as group_archive_file:
+                group_writer = csv.DictWriter(group_archive_file, fieldnames=column_names)
+                group_writer.writeheader()
+
+                for tupl in query_results:
+                    line = {} # TODO maybe change name to line_dict
+                    for i in range(0, len(column_names)):
+                        line.update({column_names[i]: tupl[i]})
+                    group_writer.writerow(line)
+
+                    groups_field = "[]"
+                    groups2_field = "[]"
+                    groups3_field = "[]"
+
+                    if 'group_names' in self.group_field_mapping.keys():
+                        if self.group_field_mapping["group_names"] in line.keys():
+                            groups_field_val = line[self.group_field_mapping["group_names"]]
+                            if groups_field_val:
+                                groups_field = groups_field_val
+                            else:
+                                logging.warn("\"Groups\" is NULL in query results. Treating as \"[]\".")
+
+                    if 'group_names2' in self.group_field_mapping.keys():
+                        if self.group_field_mapping["group_names2"] in line.keys():
+                            groups2_field_val = line[self.group_field_mapping["group_names2"]]
+                            if groups2_field_val:
+                                groups2_field = groups2_field_val
+                            else:
+                                logging.warn("\"Groups2\" is NULL in query results. Treating as \"[]\".")
+
+                    if 'group_names3' in self.group_field_mapping.keys():
+                        if self.group_field_mapping["group_names3"] in line.keys():
+                            groups3_field_val = line[self.group_field_mapping["group_names3"]]
+                            if groups3_field_val:
+                                groups3_field = groups3_field_val
+                            else:
+                                logging.warn("\"Groups3\" is NULL in query results. Treating as \"[]\".")
+
+                    groups1, groups2, groups3 = ['[]','[]','[]']
+
+                    try:
+                        groups1 = ast.literal_eval(groups_field)
+                    except:
+                        logging.warn("\"Groups\" column could not be evaluated as a Python list")
+
+                    try:
+                        groups2 = ast.literal_eval(groups2_field)
+                    except:
+                        logging.warn("\"Groups2\" column could not be evaluated as a Python list")
+
+                    try:
+                        groups3 = ast.literal_eval(groups3_field)
+                    except:
+                        logging.warn("\"Groups3\" column could not be evaluated as a Python list")
+
+                    all_groups = groups1 + groups2 + groups3 # assumes valid list format, e.g. ["a", "b", ...]
+
+
+                    g = Group(
+                        name = line[group_name_column_name],
+                        display_name = line[self.group_field_mapping["display_name"]],
+                        description = line[self.group_field_mapping["description"]],
+                        group_names = all_groups,# assumes valid list format, e.g. ["a", "b", ...]
+                        visibility = line[self.group_field_mapping["visibility"]],
+                        privileges = line[self.group_field_mapping["privileges"]]
+                        )
+                    #add User to UsersAndGroups object
+                    uag.add_group(g)
+
+            cursor.close()
 
         return uag
 

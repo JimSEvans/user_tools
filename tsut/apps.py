@@ -274,6 +274,7 @@ class TSUGOracleReader(TSUGReader):
         parser.add_argument("--groups_sql", help="Path to SQL file to read query string from, to get groups.")
         parser.add_argument("--log_dir", default='./logs', help="Identifies the location to save logs of changes made.")
         parser.add_argument("--archive_dir", default='./archive', help="Identifies the location to archive the successfully synced files and or query results.")
+        parser.add_argument("--default_security_group", help="If group_names2 column value is present but not formatted properly in users query results, this will be the default.")
 
     def get_users_and_groups(self, args):
         """
@@ -308,7 +309,7 @@ class TSUGOracleReader(TSUGReader):
         logging.info("Logger configured from Oracle Reader class.")
 
         reader = UGOracleReader()
-        ugs = reader.read_from_oracle(oracle_u_pw_dsn=args.oracle_u_pw_dsn, oracle_config=args.oracle_config_json, users_sql=args.users_sql, groups_sql=args.groups_sql, archive_dir=args.archive_dir, current_timestamp=current_timestamp)
+        ugs = reader.read_from_oracle(oracle_u_pw_dsn=args.oracle_u_pw_dsn, oracle_config=args.oracle_config_json, users_sql=args.users_sql, groups_sql=args.groups_sql, archive_dir=args.archive_dir, default_security_group=args.default_security_group, current_timestamp=current_timestamp)
         return ugs
 
 # Writers ------------------------------------------------------------------------------------------------------------
