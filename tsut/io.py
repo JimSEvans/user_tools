@@ -490,7 +490,7 @@ class UGOracleReader:
         if "name" not in self.group_field_mapping.keys():
             raise ValueError("Missing mapping for 'name'.")
 
-    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, users_sql, groups_sql, archive_dir, default_security_group,current_timestamp): # groups_sql doesn't actually do anything with groups_sql yet.
+    def read_from_oracle(self, oracle_u_pw_dsn, oracle_config, users_sql, groups_sql, archive_dir, current_timestamp): # groups_sql doesn't actually do anything with groups_sql yet.
         """
         Loads users and groups from Oracle.  If the groups_sql is not provided, the groups will be created from the
         user file with just the names.
@@ -601,21 +601,11 @@ class UGOracleReader:
                 try:
                     groups1 = ast.literal_eval(groups_field)
                 except:
-                    if default_security_group:
-                        logging.warn("\"Groups\" column could not be evaluated as a Python list; using [{0},].".format(default_security_group))
-                        groups1 = [default_security_group,]
-                    else:
-                        logging.warn("\"Groups\" column could not be evaluated as a Python list; using [].")
-                        groups1 = []
-
-                # TODO the whole default_security_group thing is a hack
-                if len(groups1) != len(set(groups1)):
-                    mode = max(set(groups1), key = groups1.count)
-                    #logging.warn("\"Groups1\" column contained at least 1 repeat, e.g. {0}.".format(mode))
-                    logging.warn("\"Groups\" column contained at least 1 repeat. Using [{0},] instead of the list containing repeats. The main or only offender: {1}.".format(default_security_group, mode))
+                    logging.warn("\"Groups\" column could not be evaluated as a Python list; using [].")
+                    groups1 = []
 
                 try:
-                    groups2 = ast.literal_eval(groups_field)
+                    groups2 = ast.literal_eval(groups2_field)
                 except:
                     logging.warn("\"Groups2\" column could not be evaluated as a Python list")
 
@@ -626,23 +616,35 @@ class UGOracleReader:
                     logging.warn("\"Groups3\" column could not be evaluated as a Python list")
 
 
-                #if len(groups3) > 0:
-                #    if bool(re.match("""\(\d+\).+""", groups3[0])):
-                #        m = re.search("""\((\d+)\).+""", groups3[0])
-                #        groups3[0] = m.group(1)
-                #    else:
-                #        logging.warn("Groups3 value is unexpected: {}".format(str(groups3)))
-
                 all_groups_unfiltered = groups1 + groups2 + groups3 # assumes valid list format, e.g. ["a", "b", ...]
 
-                # TODO this is an arbirary rule that I shouldn't hard-code in
+
+                # TODO this is an arbirary rule that I shouldn't hard-code in:
+                # Filter out group names ending in underscore.
                 all_groups = [x for x in all_groups_unfiltered if not x.endswith('_')]
                 diff = list(set(all_groups_unfiltered) - set(all_groups))
                 if len(diff) > 0:
-                #if len(all_groups_unfiltered) > len(all_groups):
-                    logging.warn("For {0}, you were going to add group(s) with a name ending in an '_', which this code is preventing: {{1}}".format(line[user_name_column_name],str(diff)))
-                    #for x in diff:
-                    #    logging.warn("Bad group name: {0}.".format(x))
+                    logging.warn("You tried to assign {0} to group(s) whose name ends in '_', which this code prevents: {1}.".format(line[user_name_column_name],str(diff)))
+
+                # Note if there are repeats
+                if len(all_groups) != len(set(all_groups)):
+                    mode = max(set(all_groups), key = all_groups.count)
+                    logging.warn("(Combined) Groups column(s) contains at least 1 repeat (after filtering out bad group names, if any). The main or only offender: {0}. Repeats will be filtered out.".format(mode))
+
+
+                visibility_field = None
+                if 'visibility' in self.group_field_mapping.keys():
+                    if self.group_field_mapping["visibility"] in line.keys():
+                        visibility_field_val = line[self.group_field_mapping["visibility"]]
+                        if visibility_field_val:
+                            visibility_field = visibility_field_val
+                        else:
+                            #logging.warn("\"Visibility\" is NULL in query results. Treating as None.")
+                            pass
+                    else:
+                        #logging.warn("\"Visibility\" is absent in query results. Treating as None.")
+                        pass
+
 
                 u = User(
                     name = line[user_name_column_name],
@@ -650,7 +652,8 @@ class UGOracleReader:
                     mail = line[self.user_field_mapping["mail"]],
                     password = line[self.user_field_mapping["password"]],
                     group_names = all_groups,
-                    visibility = line[self.user_field_mapping["visibility"]]
+                    #visibility = line[self.user_field_mapping["visibility"]]
+                    visibility = visibility_field
                     )
                 #add User to UsersAndGroups object
                 uag.add_user(u)
@@ -659,8 +662,6 @@ class UGOracleReader:
         if groups_sql:
 
             group_name_column_name = self.group_field_mapping["name"]
-
-            cursor.execute("SET TRANSACTION READ ONLY")
 
             with open(groups_sql) as sql_f:
                 sql = sql_f.read()
@@ -733,14 +734,39 @@ class UGOracleReader:
 
                     all_groups = groups1 + groups2 + groups3 # assumes valid list format, e.g. ["a", "b", ...]
 
+                    visibility_field = None
+                    if 'visibility' in self.group_field_mapping.keys():
+                        if self.group_field_mapping["visibility"] in line.keys():
+                            visibility_field_val = line[self.group_field_mapping["visibility"]]
+                            if visibility_field_val:
+                                visibility_field = visibility_field_val
+                            else:
+                                #logging.warn("\"Visibility\" is NULL in query results. Treating as None.")
+                                pass
+                        else:
+                            #logging.warn("\"Visibility\" is absent in query results. Treating as None.")
+                            pass
+
+                    privileges_field = None
+                    if 'privileges' in self.group_field_mapping.keys():
+                        if self.group_field_mapping["privileges"] in line.keys():
+                            privileges_field_val = line[self.group_field_mapping["privileges"]]
+                            if privileges_field_val:
+                                privileges_field = privileges_field_val
+                            else:
+                                #logging.warn("\"Privileges\" is NULL in query results. Treating as None.")
+                                pass
+                        else:
+                            #logging.warn("\"Privileges\" is absent in query results. Treating as None.")
+                            pass
 
                     g = Group(
                         name = line[group_name_column_name],
                         display_name = line[self.group_field_mapping["display_name"]],
                         description = line[self.group_field_mapping["description"]],
                         group_names = all_groups,# assumes valid list format, e.g. ["a", "b", ...]
-                        visibility = line[self.group_field_mapping["visibility"]],
-                        privileges = line[self.group_field_mapping["privileges"]]
+                        visibility = visibility_field,
+                        privileges = privileges_field
                         )
                     #add User to UsersAndGroups object
                     uag.add_group(g)

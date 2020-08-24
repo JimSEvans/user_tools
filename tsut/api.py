@@ -332,6 +332,7 @@ class SyncUsersAndGroups(BaseApiInterface):
 
         if create_groups:
             self.__add_all_user_groups(existing_ugs, users_and_groups)
+            self.__add_all_parent_groups(existing_ugs, users_and_groups) # Consider making this a separate command-line arg
 
         if merge_groups:
             SyncUsersAndGroups.__merge_groups_into_new(existing_ugs, users_and_groups)
@@ -395,6 +396,31 @@ class SyncUsersAndGroups(BaseApiInterface):
                     new_ugs.add_group(Group(name=group_name, display_name=group_name,
                                             description="Implicitely created group."))
 
+    @staticmethod
+    def __add_all_parent_groups(original_ugs, new_ugs):
+        """
+        Causes the creation/addition of all groups that groups are assigned to, but which don't 
+        already exist as Group objects created from group CSV/Groups Excel sheet. This will first 
+        get existing groups to make sure existing groups aren't updated.
+        :param original_ugs: The original users and groups, possibly from ThoughtSpot.
+        :type original_ugs: UsersAndGroups
+        :param new_ugs: The new users and groups that will be synced.
+        :type new_ugs: UsersAndGroups
+        :return: Nothing.  New users and groups list is updated.
+        :rtype: None
+        """
+        new_group_groups = set()
+        for group in new_ugs.get_groups():
+            new_group_groups.update(group.groupNames)
+
+        for group_name in new_group_groups:
+            if not new_ugs.get_group(group_name=group_name): # The group isn't in the new list.
+                old_group = original_ugs.get_group(group_name=group_name)
+                if old_group:  # the group is in the old list, so use that one.
+                    new_ugs.add_group(g=old_group)
+                else:
+                    new_ugs.add_group(Group(name=group_name, display_name=group_name,
+                                            description="Implicitely created group."))
 
     @staticmethod
     def __merge_groups_into_new(original_ugs, new_ugs):

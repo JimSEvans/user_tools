@@ -404,23 +404,38 @@ class UsersAndGroups:
             directory += '/'
 
         with open(directory + user_csv_filename, 'w') as user_csv_file, open(directory + group_csv_filename, 'w') as group_csv_file:
+
             first_user = 1
             user_writer = None
+            user_dicts = [x for x in uag_dicts if x['principalTypeEnum']=='LOCAL_USER']
+            user_column_names = []
+            for x in user_dicts:
+                for k in x.keys():
+                    if k not in user_column_names:
+                        user_column_names.append(k)
+
             first_group = 1
             group_writer = None
+            group_dicts = [x for x in uag_dicts if x['principalTypeEnum']=='LOCAL_GROUP']
+            group_column_names = []
+            for x in group_dicts:
+                for k in x.keys():
+                    if k not in group_column_names:
+                        group_column_names.append(k)
+
             for entity in uag_dicts:
                 if entity['principalTypeEnum'] == 'LOCAL_USER':
                     if first_user:
                         column_names = list(entity.keys())
                         if 'mail' not in entity.keys(): # These 2 lines are basically a hack. I might as well hard-code the column names, but only this one was necessary to guarantee the right column names.
                             column_names.append('mail') #
-                        user_writer = csv.DictWriter(user_csv_file, fieldnames=column_names)
+                        user_writer = csv.DictWriter(user_csv_file, fieldnames=user_column_names)
                         user_writer.writeheader()
                         first_user = 0
                     user_writer.writerow(entity)
                 elif entity['principalTypeEnum'] == 'LOCAL_GROUP':
                     if first_group:
-                        group_writer = csv.DictWriter(group_csv_file, fieldnames=entity.keys())
+                        group_writer = csv.DictWriter(group_csv_file, fieldnames=group_column_names)
                         group_writer.writeheader()
                         first_group = 0
                     group_writer.writerow(entity)
