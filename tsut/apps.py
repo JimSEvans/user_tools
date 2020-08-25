@@ -259,7 +259,8 @@ class TSUGOracleReader(TSUGReader):
         """
 
         super(TSUGOracleReader, self).__init__(
-            required_arguments=["users_sql"]
+            #required_arguments=["users_sql"]
+            required_arguments=[]
         )
 
     def add_parser_arguments(self, parser):
@@ -284,11 +285,16 @@ class TSUGOracleReader(TSUGReader):
         :rtype: UsersAndGroups
         """
 
+        if not (args.users_sql or args.groups_sql):
+            raise ValueError("You have nothing to sync: neither users_sql nor groups_sql was provided.")
+
+        if args.remove_deleted and (not args.users_sql):
+            raise ValueError("You can't use remove_deleted without specifying users_sql, because that would delete all users, and that could be bad.")
+
         # Configure root logger so that it logs to file in args.log_dir in addition to console.
         log_dir = args.log_dir
         if not log_dir:
             log_dir = './logs/'
-
 
         try:
             os.makedirs(log_dir)
