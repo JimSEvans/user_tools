@@ -32,6 +32,36 @@ logger.setLevel(logging.DEBUG)
 
 # -------------------------------------------------------------------------------------------------------------------
 
+def write_outcome_file(file_path='./sync_outcome.txt', outcome_file_config_json=None, msg=None,  successful=None):
+
+    if outcome_file_config_json and msg:
+        logging.warn("You are specifying a message in the msg argument but also passing an outcome_file_config_json: msg will be used.")
+    if successful and msg:
+        logging.warn("You specified msg and successful params: msg will be written, regardless of value of successful.")
+
+    success_msg = "Success! TS sync successfully ran."
+    failure_msg = "Failure. TS sync failed."
+
+    if outcome_file_config_json:
+        # read config
+        with open(outcome_file_config_json) as json_file:
+            outcome_data = json.load(json_file)
+        success_msg = outcome_data['success_msg']
+        failure_msg = outcome_data['failure_msg']
+        file_path = outcome_data['file_path']
+
+    if msg:
+        message = msg
+    else:
+        if successful is None:
+            raise Exception("Success vs. failure of sync not specified. The successful param can't be None unless msg param is passed.")
+        else:
+            message = success_msg if successful else failure_msg
+
+    with open(file_path, 'w') as f:
+        f.write(message)
+
+
 """Classes to work with the TS public user and list APIs"""
 
 
@@ -302,7 +332,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 response.text,
                 )
 
-    def sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None):
+    def sync_users_and_groups(self, users_and_groups, apply_changes=False, remove_deleted=False, batch_size=-1, create_groups=False, merge_groups=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None, outcome_file_config_json=None):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -357,6 +387,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                                             log_dir=log_dir, archive_dir=archive_dir, 
                                             current_timestamp=current_timestamp, 
                                             email_config_json=email_config_json, 
+                                            outcome_file_config_json=outcome_file_config_json,
                                             sync_files=sync_files)
 
         # Sync all users and groups.
@@ -368,6 +399,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                 archive_dir=archive_dir,
                 current_timestamp=current_timestamp, 
                 email_config_json=email_config_json, 
+                outcome_file_config_json=outcome_file_config_json,
                 sync_files=sync_files)
 
     @staticmethod
@@ -439,8 +471,39 @@ class SyncUsersAndGroups(BaseApiInterface):
             if original_user:
                 new_user.groupNames.extend(original_user.groupNames)
 
+    def send_email(self, email_config_json, successful):
+
+        success_msg = "Subject: Success - Sync with TS\n\nSync with TS was successful."
+        failure_msg = "Subject: Failure - Sync with TS\n\nSync with TS failed."
+
+        # read config
+        with open(email_config_json) as json_file:
+            email_data = json.load(json_file)
+        smtp_server = email_data['smtp_server']
+        port = 587
+        sender_email = email_data['sender_email']
+        receiver_emails = email_data['receiver_emails']
+        password = email_data['password']
+
+        try:
+            success_msg = email_data['success_msg']
+            failure_msg = email_data['failure_msg']
+        except Exception as e:
+            print(str(e))
+
+        message = success_msg if successful else failure_msg
+
+        # Create a secure SSL context
+        context = ssl.create_default_context()
+        # Set up email server and credentials for sending outcome alerts.
+        with smtplib.SMTP(smtp_server, port) as server:
+            server.starttls(context=context)
+            server.login(sender_email, password)
+            server.sendmail(sender_email, receiver_emails, message)
+
+
     @api_call
-    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None):
+    def _sync_users_and_groups(self, users_and_groups, apply_changes=True, remove_deleted=False, log_dir='logs/', archive_dir='archive/', current_timestamp=dt.datetime.now().strftime('%d%b%y_%H-%M-%S-%f'), sync_files=[], email_config_json=None, outcome_file_config_json=None):
         """
         Syncs users and groups.
         :param users_and_groups: List of users and groups to sync.
@@ -459,36 +522,19 @@ class SyncUsersAndGroups(BaseApiInterface):
         :type email_config_json: str
         :returns: The response from the sync.
         """
-        
-        # Set up email server and credentials for sending outcome alerts.
-        if email_config_json:
-            with open(email_config_json) as json_file:
-                email_data = json.load(json_file)
-                smtp_server = email_data['smtp_server']
-                port = 587 #email_data['port']
-                sender_email = email_data['sender_email']
-                receiver_emails = email_data['receiver_emails']
-                password = email_data['password']
-
-            # Create a secure SSL context
-            context = ssl.create_default_context()
 
         is_valid = users_and_groups.is_valid()
         if not is_valid[0]:
-            # print("Invalid user and group structure.")
-            if email_config_json:
-                message = """\
-Subject: Failure - Sync with TS
-
-Sync with TS failed due to invalid users/groups."""
-                with smtplib.SMTP(smtp_server, port) as server:
-                    #server.ehlo()
-                    server.starttls(context=context)
-                    #server.ehlo()
-                    server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_emails, message)
-                logging.info("Sent failure email")
             logging.error("Invalid users and groups.")
+            write_outcome_file(
+                outcome_file_config_json=outcome_file_config_json,
+                msg = "Failure. TS sync failed.\nInvalid users and groups.",
+                successful = False
+                )
+            logging.info("Wrote failure text file")
+            if email_config_json:
+                self.send_email(email_config_json, successful=False)
+                logging.info("Sent failure email")
             raise Exception("Invalid users and groups")
 
         url = self.format_url(SyncUsersAndGroups.SYNC_ALL_URL)
@@ -500,7 +546,7 @@ Sync with TS failed due to invalid users/groups."""
         json.loads(json_str)  # do a load to see if it breaks due to bad JSON.
 
         # Get the temp folder from the environment settings, so it will work cross platform.
-        logging.debug("Using temp folder:"+tempfile.gettempdir())
+        logging.debug("Using temp folder:" + tempfile.gettempdir())
         tmp_file = tempfile.gettempdir() + "/ug.json.%d" % time.time()
 
         with open(tmp_file, "w") as out:
@@ -546,7 +592,8 @@ Sync with TS failed due to invalid users/groups."""
         # This will be capured in the names of the log files.
         if not apply_changes:
             current_timestamp += '_Test_Mode'
-        
+
+        # If successful request...
         if response.status_code == 200:
             logging.info("Successfully synced users and groups.")
             changes_json_bytes = response.text.encode("utf-8")
@@ -617,11 +664,7 @@ Sync with TS failed due to invalid users/groups."""
 
             # Make a CSV log of changes
 
-            # TODO Add column specifying the change that wasy made so that people don't have to cross reference log file with archive
-            # TODO Add the name of the original CSV to the name of the log file so the connection is explicit
-
-
-
+            # TODO Add column specifying the change that was made so that people don't have to cross reference log file with archive
             csv_log_file_name = log_file_name_no_ext + '.csv'
 
             with open(csv_log_file_name, 'w') as changes_file_csv:
@@ -656,49 +699,34 @@ Sync with TS failed due to invalid users/groups."""
                     users_and_groups.write_to_csv(log_dir, sent_user_csv_filename, sent_group_csv_filename)#'{0}.csv'.format(archive_csv_filename))
 
 
-            #logging.info("Finished.")
-            #print(len(log.handlers))
-            #for h in log.handlers:
-            #    h.close()
-            #    log.removeFilter(h)
-
-            # TODO send success email
             if email_config_json:
-                message = """\
-Subject: Success - Sync with TS
-
-Sync with TS was successful."""
-                with smtplib.SMTP(smtp_server, port) as server:
-                    #server.ehlo()
-                    server.starttls(context=context)
-                    #server.ehlo()
-                    server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_emails, message)
+                self.send_email(email_config_json, successful=True)
                 logging.info("Sent success email")
+
+            write_outcome_file(
+                outcome_file_config_json=outcome_file_config_json,
+                successful = True
+                )
+
             
             return response
 
         else:
-            # Send failure email
+            write_outcome_file(
+                outcome_file_config_json=outcome_file_config_json,
+                msg = "Failure. TS sync failed.\nResponse status code: {0}".format(str(response.status_code)),
+                successful=False
+                )
+            logging.info("Wrote failure text file")
             if email_config_json:
-                message = """\
-Subject: Failure - Sync with TS
-
-Sync with TS failed, with status code {0}.""".format(response.status_code)
-                with smtplib.SMTP(smtp_server, port) as server:
-                    server.starttls(context=context)
-                    server.login(sender_email, password)
-                    server.sendmail(sender_email, receiver_emails, message)
+                self.send_email(email_config_json, successful=False)
                 logging.info("Sent failure email")
 
             logging.error("Failed to sync users and groups.")
             logging.info(response.text.encode("utf-8"))
             with open("{0}users_and_groups_failed_sync_{1}.json".format(log_dir, current_timestamp), "w") as outfile:
                 outfile.write(str(json_str.encode("utf-8")))
-            raise requests.ConnectionError(
-                "Error syncing users and groups (%d)" % response.status_code,
-                response.text,
-            )
+            raise requests.ConnectionError("Error syncing users and groups (%d)" % response.status_code)
 
 
     @api_call

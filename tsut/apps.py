@@ -557,6 +557,7 @@ class TSUGSyncWriter(TSUGWriter):
                             help="Identifies the location to archive the successfully synced files.")
         parser.add_argument("--email_config_json",
                             help="Path to email configuration JSON file.")
+        parser.add_argument("--outcome_file_config_json", help="Path to configuration JSON file for writing the outcome of the sync.")
         parser.add_argument("--user_csv", help="Path to CSV file to read users from.")
         parser.add_argument("--group_csv", help="Path to CSV file to read groups from.")
         parser.add_argument("--users_sql", help="Path to CSV file to read users from.") #TODO help msg bad
@@ -599,6 +600,7 @@ class TSUGSyncWriter(TSUGWriter):
                                    archive_dir=args.archive_dir,
                                    current_timestamp=current_timestamp,
                                    email_config_json=args.email_config_json,
+                                   outcome_file_config_json=args.outcome_file_config_json,
                                    sync_files=ts_sync_files)
 
 

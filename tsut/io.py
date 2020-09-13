@@ -10,7 +10,7 @@ import logging
 #import xlrd  # reading Excel
 import cx_Oracle
 
-from .api import UsersAndGroups, User, Group, eprint
+from .api import UsersAndGroups, User, Group, eprint, write_outcome_file
 
 """
 Copyright 2018 ThoughtSpot
@@ -526,7 +526,12 @@ class UGOracleReader:
 
         if oracle_u_pw_dsn:
             oracle_u, oracle_pw, oracle_dsn = oracle_u_pw_dsn.split(',')
-            connection = cx_Oracle.connect(oracle_u, oracle_pw, oracle_dsn) # If this causes error, try setting $TNS_ADMIN to the dir containing tnsnames.ora
+            try:
+                connection = cx_Oracle.connect(oracle_u, oracle_pw, oracle_dsn) # If this causes error, try setting $TNS_ADMIN to the dir containing tnsnames.ora
+            except Exception as e:
+                write_outcome_file(msg = "Failure. TS sync failed.\nCould not connect to Oracle DB.", successful=False)
+                logging.info("Wrote failure text file")
+                raise e
         else:
             with open(oracle_config) as json_file:
                 connect_data = json.load(json_file)
