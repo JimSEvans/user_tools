@@ -25,9 +25,10 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR TH
 This script will retrieve users and groups and write the results to an output file.
 """
 
-
 def run_app():
     """Runs the application to delete users and groups."""
+
+    print("FOOOOOO\nfooooo")
 
     args = get_args()
     if valid_args(args=args):
@@ -36,7 +37,8 @@ def run_app():
             args.ts_url = args.ts_url[:-1]
 
         sync = SyncUsersAndGroups(tsurl=args.ts_url,
-                                 username=args.username, password=args.password,
+                                 username=args.username,
+                                 password=args.password,
                                  disable_ssl=args.disable_ssl)
 
         if args.users:
@@ -62,6 +64,7 @@ def get_args():
     parser.add_argument("--groups", help="List of group ids to delete.")
     parser.add_argument("--user_file", help="File with list of user ids to delete.")
     parser.add_argument("--group_file", help="File with list of group ids to delete.")
+    parser.add_argument("--batch_size", default=-1, type=int, help="Size of batches.")
 
     return parser.parse_args()
 
@@ -107,6 +110,8 @@ def delete_users_from_file(args, sync):
     :type sync: SyncUsersAndGroups
     """
     users = []
+    batch_size = args.batch_size
+
     with open(args.user_file, "r") as user_file:
         for row in user_file:
             user = row.strip()
@@ -114,7 +119,15 @@ def delete_users_from_file(args, sync):
             if user != "" and user is not None:
                 users.append(user)
 
-    sync.delete_users(usernames=users)
+    if batch_size > 0:
+        while len(users) > 0:
+            # get a batch of users to sync.
+            user_batch = users[:batch_size]
+            del users[:batch_size]
+            sync.delete_users(usernames=user_batch)
+    # Delete users all in one batch
+    else:
+        sync.delete_users(usernames=users)
 
 
 def delete_groups(args, sync):
@@ -138,6 +151,8 @@ def delete_groups_from_file(args, sync):
     :type sync: SyncUsersAndGroups
     """
     groups = []
+    batch_size = args.batch_size
+
     with open(args.group_file, "r") as group_file:
         for row in group_file:
             group = row.strip()
@@ -145,7 +160,15 @@ def delete_groups_from_file(args, sync):
             if group != "" and group is not None:
                 groups.append(group)
 
-    sync.delete_groups(groupnames=groups)
+    if batch_size > 0:
+        while len(groups) > 0:
+            # get a batch of groups to sync.
+            group_batch = groups[:batch_size]
+            del groups[:batch_size]
+            sync.delete_groups(groupnames=group_batch)
+    # Delete users all in one batch
+    else:
+        sync.delete_groups(groupnames=groups)
 
 
 if __name__ == "__main__":
