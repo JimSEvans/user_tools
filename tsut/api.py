@@ -115,7 +115,8 @@ class UGJsonReader:
                 )
                 # TODO remove after testing.
                 if auag.has_user(user.name):
-                    logging.warning(f"Duplicate user {user.name} already exists.")
+                    pass
+                    #logging.warning(f"Duplicate user {user.name} already exists.")
                 else:
                     auag.add_user(user)
             else:
@@ -360,14 +361,14 @@ class SyncUsersAndGroups(BaseApiInterface):
 
         existing_ugs = self.get_all_users_and_groups() if (create_groups or merge_groups) else None
 
-        if create_groups:
+        if create_groups and batch_size <= 0:
             self.__add_all_user_groups(existing_ugs, users_and_groups)
             self.__add_all_parent_groups(existing_ugs, users_and_groups) # Consider making this a separate command-line arg
 
         if merge_groups:
             SyncUsersAndGroups.__merge_groups_into_new(existing_ugs, users_and_groups)
 
-        # Sync in batches
+        # Sync users in batches
         if batch_size > 0:
             all_users = users_and_groups.get_users()
             while len(all_users) > 0:
@@ -378,17 +379,42 @@ class SyncUsersAndGroups(BaseApiInterface):
                 ug_batch = UsersAndGroups()
                 for user in user_batch:
                     ug_batch.add_user(users_and_groups.get_user(user.name))
-                    for group_name in user.groupNames:  # Add the user's groups as well.
-                        ug_batch.add_group(users_and_groups.get_group(group_name=group_name),
-                                           duplicate=UsersAndGroups.IGNORE_ON_DUPLICATE)
+                    if create_groups:
+                        self.__add_all_user_groups(existing_ugs, ug_batch)
+                        self.__add_all_parent_groups(existing_ugs, ug_batch) # Consider making this a separate command-line arg
+                        for u in ug_batch.get_users():
+                            if not existing_ugs.has_user(user_name = u.name):
+                                existing_ugs.add_user(u, duplicate=UsersAndGroups.IGNORE_ON_DUPLICATE)
+                        for g in ug_batch.get_groups():
+                            if not existing_ugs.has_group(group_name = g.name):
+                                existing_ugs.add_user(g, duplicate=UsersAndGroups.IGNORE_ON_DUPLICATE)
+                    else:
+                        for group_name in user.groupNames:  # Add the user's groups as well.
+                            ug_batch.add_group(users_and_groups.get_group(group_name=group_name), duplicate=UsersAndGroups.IGNORE_ON_DUPLICATE)
 
                 self._sync_users_and_groups(users_and_groups=ug_batch,
-                                            apply_changes=apply_changes, remove_deleted=remove_deleted,
+                                            apply_changes=apply_changes, 
+                                            remove_deleted=remove_deleted,
                                             log_dir=log_dir, archive_dir=archive_dir, 
                                             current_timestamp=current_timestamp, 
                                             email_config_json=email_config_json, 
                                             outcome_file_config_json=outcome_file_config_json,
                                             sync_files=sync_files)
+
+            # Sync groups from users_and_groups (the data to be synced) at once, despite batch mode, since this will probably not cause a time-out
+            groups_to_sync = users_and_groups.get_groups()
+            ug_just_for_groups = UsersAndGroups()
+            for group in groups_to_sync:
+                ug_just_for_groups.add_group(group)
+            self.__add_all_parent_groups(existing_ugs, ug_just_for_groups) # Consider making this a separate command-line arg
+            self._sync_users_and_groups(users_and_groups=ug_just_for_groups,
+                                        apply_changes=apply_changes, 
+                                        remove_deleted=remove_deleted,
+                                        log_dir=log_dir, archive_dir=archive_dir, 
+                                        current_timestamp=current_timestamp, 
+                                        email_config_json=email_config_json, 
+                                        outcome_file_config_json=outcome_file_config_json,
+                                        sync_files=sync_files)
 
         # Sync all users and groups.
         else:
@@ -426,7 +452,7 @@ class SyncUsersAndGroups(BaseApiInterface):
                     new_ugs.add_group(g=old_group)
                 else:
                     new_ugs.add_group(Group(name=group_name, display_name=group_name,
-                                            description="Implicitely created group."))
+                                            description="Implicitly created group."))
 
     @staticmethod
     def __add_all_parent_groups(original_ugs, new_ugs):
@@ -441,18 +467,18 @@ class SyncUsersAndGroups(BaseApiInterface):
         :return: Nothing.  New users and groups list is updated.
         :rtype: None
         """
-        new_group_groups = set()
+        new_group_parent_groups = set()
         for group in new_ugs.get_groups():
-            new_group_groups.update(group.groupNames)
+            new_group_parent_groups.update(group.groupNames)
 
-        for group_name in new_group_groups:
+        for group_name in new_group_parent_groups:
             if not new_ugs.get_group(group_name=group_name): # The group isn't in the new list.
                 old_group = original_ugs.get_group(group_name=group_name)
                 if old_group:  # the group is in the old list, so use that one.
                     new_ugs.add_group(g=old_group)
                 else:
                     new_ugs.add_group(Group(name=group_name, display_name=group_name,
-                                            description="Implicitely created group."))
+                                            description="Implicitly created group."))
 
     @staticmethod
     def __merge_groups_into_new(original_ugs, new_ugs):
@@ -525,6 +551,7 @@ class SyncUsersAndGroups(BaseApiInterface):
 
         is_valid = users_and_groups.is_valid()
         if not is_valid[0]:
+            #print(is_valid)
             logging.error("Invalid users and groups.")
             write_outcome_file(
                 outcome_file_config_json=outcome_file_config_json,
@@ -535,7 +562,11 @@ class SyncUsersAndGroups(BaseApiInterface):
             if email_config_json:
                 self.send_email(email_config_json, successful=False)
                 logging.info("Sent failure email")
+            #with open('invalid_uag.txt', 'w') as fyle:
+            #    fyle.write(users_and_groups)
+
             raise Exception("Invalid users and groups")
+                
 
         url = self.format_url(SyncUsersAndGroups.SYNC_ALL_URL)
 

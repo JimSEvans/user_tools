@@ -185,7 +185,7 @@ class Group:
 
     def add_group(self, group_name):
         """
-        Adds a parent group for the user.
+        Adds a parent group for the group.
         :param group_name: Name of the group to add.  Only one of any group is added.
         """
 
@@ -243,15 +243,17 @@ class UsersAndGroups:
         if not user:
             self.users[l_username] = u
         else:
-            print(f"WARNING:  Duplicate user {user.name} already exists.")
+            #print(f"WARNING:  Duplicate user {user.name} already exists.")
 
             if duplicate == UsersAndGroups.RAISE_ERROR_ON_DUPLICATE:
                 raise Exception(f"Duplicate user {u}")
             elif duplicate == UsersAndGroups.IGNORE_ON_DUPLICATE:
                 pass  # keep the old one.
             elif duplicate == UsersAndGroups.OVERWRITE_ON_DUPLICATE:
+                print(f"WARNING:  Duplicate user {user.name} already exists.")
                 self.users[l_username] = u
             elif duplicate == UsersAndGroups.UPDATE_ON_DUPLICATE:
+                print(f"WARNING:  Duplicate user {user.name} already exists.")
                 u.groupNames.extend(user.groupNames)
                 self.users[l_username] = u
             else:
