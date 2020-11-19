@@ -726,7 +726,8 @@ class UGOracleReader:
                     try:
                         groups1 = ast.literal_eval(groups_field)
                     except:
-                        logging.warn("\"Groups\" column could not be evaluated as a Python list")
+                        groups_field_str = str(groups_field)
+                        logging.warn(f"\"Groups\" column could not be evaluated as a Python list: {groups_field_str}")
 
                     try:
                         groups2 = ast.literal_eval(groups2_field)
